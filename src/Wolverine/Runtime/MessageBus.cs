@@ -7,7 +7,7 @@ using Wolverine.Transports;
 
 namespace Wolverine.Runtime;
 
-public class MessageBus : IMessageBus
+public class MessageBus : IMessageBus, IMessageContext
 {
     public static MessageBus Build(IWolverineRuntime runtime, string correlationId) =>
         new MessageBus(runtime, correlationId);
@@ -42,9 +42,19 @@ public class MessageBus : IMessageBus
     }
 
     public string? CorrelationId { get; set; }
+    public Envelope? Envelope { get; protected set; }
+    public virtual ValueTask RespondToSenderAsync(object response)
+    {
+        throw new NotSupportedException("Not supported from MessageBus, only within message handlers executing against MessageContext");
+    }
+
+    public virtual Task ReScheduleCurrentAsync(DateTimeOffset rescheduledAt)
+    {
+        throw new NotSupportedException("Not supported from MessageBus, only within message handlers executing against MessageContext");
+    }
 
     public IWolverineRuntime Runtime { get; }
-    public IMessageStore Storage { get; protected set; }
+    public IMessageStore Storage { get; internal set; }
 
     public IEnumerable<Envelope> Outstanding => _outstanding;
 
@@ -109,6 +119,32 @@ public class MessageBus : IMessageBus
         return Runtime.FindInvoker(message.GetType()).InvokeAsync<T>(message, this, cancellation, timeout);
     }
 
+    public Task InvokeAsync(object message, DeliveryOptions options, CancellationToken cancellation = default,
+        TimeSpan? timeout = default)
+    {
+        if (message == null)
+        {
+            throw new ArgumentNullException(nameof(message));
+        }
+
+        Runtime.AssertHasStarted();
+
+        return Runtime.FindInvoker(message.GetType()).InvokeAsync(message, this, cancellation, timeout, options);
+    }
+
+    public Task<T> InvokeAsync<T>(object message, DeliveryOptions options, CancellationToken cancellation = default,
+        TimeSpan? timeout = default)
+    {
+        if (message == null)
+        {
+            throw new ArgumentNullException(nameof(message));
+        }
+
+        Runtime.AssertHasStarted();
+
+        return Runtime.FindInvoker(message.GetType()).InvokeAsync<T>(message, this, cancellation, timeout, options);
+    }
+
     public Task InvokeForTenantAsync(string tenantId, object message, CancellationToken cancellation = default,
         TimeSpan? timeout = default)
     {
@@ -119,7 +155,7 @@ public class MessageBus : IMessageBus
 
         Runtime.AssertHasStarted();
 
-        return Runtime.FindInvoker(message.GetType()).InvokeAsync(message, this, cancellation, timeout, tenantId);
+        return Runtime.FindInvoker(message.GetType()).InvokeAsync(message, this, cancellation, timeout, new DeliveryOptions{TenantId = tenantId});
     }
 
     public Task<T> InvokeForTenantAsync<T>(string tenantId, object message, CancellationToken cancellation = default,
@@ -132,12 +168,17 @@ public class MessageBus : IMessageBus
 
         Runtime.AssertHasStarted();
 
-        return Runtime.FindInvoker(message.GetType()).InvokeAsync<T>(message, this, cancellation, timeout, tenantId);
+        return Runtime.FindInvoker(message.GetType()).InvokeAsync<T>(message, this, cancellation, timeout, new DeliveryOptions{TenantId = tenantId});
     }
 
     public IReadOnlyList<Envelope> PreviewSubscriptions(object message)
     {
         return Runtime.RoutingFor(message.GetType()).RouteForPublish(message, null);
+    }
+    
+    public IReadOnlyList<Envelope> PreviewSubscriptions(object message, DeliveryOptions options)
+    {
+        return Runtime.RoutingFor(message.GetType()).RouteForPublish(message, options);
     }
 
     public ValueTask SendAsync<T>(T message, DeliveryOptions? options = null)
@@ -145,6 +186,13 @@ public class MessageBus : IMessageBus
         if (message == null)
         {
             throw new ArgumentNullException(nameof(message));
+        }
+        
+        // Check for both so you don't get an infinite loop
+        // from TimeoutMessage
+        if (options == null && message is ISendMyself m)
+        {
+            return m.ApplyAsync(this);
         }
 
         Runtime.AssertHasStarted();
@@ -162,6 +210,13 @@ public class MessageBus : IMessageBus
         if (message == null)
         {
             throw new ArgumentNullException(nameof(message));
+        }
+
+        // Check for both so you don't get an infinite loop
+        // from TimeoutMessage
+        if (options == null && message is ISendMyself m)
+        {
+            return m.ApplyAsync(this);
         }
 
         Runtime.AssertHasStarted();
@@ -244,6 +299,7 @@ public class MessageBus : IMessageBus
         outbound.ConversationId = outbound.Id; // the message chain originates here
         outbound.TenantId ??= TenantId; // don't override a tenant id that's specifically set on the envelope itself
         outbound.ParentId = activity?.Id;
+        outbound.Store = Storage;
     }
 
     internal async ValueTask PersistOrSendAsync(params Envelope[] outgoing)

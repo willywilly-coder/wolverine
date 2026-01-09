@@ -12,6 +12,25 @@ using Wolverine.Util;
 
 namespace Wolverine.Runtime;
 
+public enum MultiFlushMode
+{
+    /// <summary>
+    /// The default mode, additional calls to FlushOutgoingMessages() are ignored
+    /// </summary>
+    OnlyOnce,
+    
+    /// <summary>
+    /// Allow for multiple calls to FlushOutgoingMessages()
+    /// </summary>
+    AllowMultiples,
+    
+    /// <summary>
+    /// Throw an exception on additional calls to FlushOutgoingMessages(). Use this to troubleshoot
+    /// erroneous behavior
+    /// </summary>
+    AssertOnMultiples
+}
+
 public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelopeTransaction, IEnvelopeLifecycle
 {
     private IChannelCallback? _channel;
@@ -29,6 +48,18 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         TenantId = runtime.Options.Durability.TenantIdStyle.MaybeCorrectTenantId(tenantId);
     }
 
+    Task<bool> IEnvelopeTransaction.TryMakeEagerIdempotencyCheckAsync(Envelope envelope,
+        DurabilitySettings settings, CancellationToken cancellation)
+    {
+        return Task.FromResult(true);
+    }
+
+    /// <summary>
+    /// Governs how the MessageContext will handle subsequent calls to FlushOutgoingMessages(). The
+    /// default behavior is to quietly ignore any additional calls
+    /// </summary>
+    public MultiFlushMode MultiFlushMode { get; set; } = MultiFlushMode.OnlyOnce;
+
     internal IList<Envelope> Scheduled { get; } = new List<Envelope>();
 
     private bool hasRequestedReply()
@@ -38,18 +69,48 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
 
     private bool isMissingRequestedReply()
     {
-        return Outstanding.All(x => x.MessageType != Envelope!.ReplyRequested);
+        return Outstanding.Concat(_sent ?? []).All(x => x.MessageType != Envelope!.ReplyRequested);
+    }
+
+    /// <summary>
+    /// Potentially throws an exception if the current message has already been processed
+    /// </summary>
+    /// <param name="cancellation"></param>
+    /// <exception cref="DuplicateIncomingEnvelopeException"></exception>
+    public async Task AssertEagerIdempotencyAsync(CancellationToken cancellation)
+    {
+        if (Envelope == null || Envelope.WasPersistedInInbox ) return;
+        if (Transaction == null) return;
+
+        var check = await Transaction.TryMakeEagerIdempotencyCheckAsync(Envelope, Runtime.Options.Durability, cancellation);
+        if (!check)
+        {
+            throw new DuplicateIncomingEnvelopeException(Envelope);
+        }
+
+        Envelope.WasPersistedInInbox = true;
     }
 
     public async Task FlushOutgoingMessagesAsync()
     {
         if (_hasFlushed)
         {
-            return;
+            switch (MultiFlushMode)
+            {
+                case MultiFlushMode.OnlyOnce:
+                    return;
+                
+                case MultiFlushMode.AllowMultiples:
+                    Runtime.Logger.LogWarning("Received multiple calls to FlushOutgoingMessagesAsync() to a single MessageContext");
+                    break;
+                
+                case MultiFlushMode.AssertOnMultiples:
+                    throw new InvalidOperationException(
+                        $"This MessageContext does not allow multiple calls to {nameof(FlushOutgoingMessagesAsync)} because {nameof(MultiFlushMode)} = {MultiFlushMode}");
+            }
         }
 
-        if (!Outstanding.Any()) return;
-
+        
         await AssertAnyRequiredResponseWasGenerated();
 
         if (!Outstanding.Any())
@@ -65,16 +126,26 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
                 {
                     if (!envelope.Sender!.IsDurable)
                     {
-                        Runtime.ScheduleLocalExecutionInMemory(envelope.ScheduledTime!.Value, envelope);
+                        if (envelope.Sender!.SupportsNativeScheduledSend)
+                        {
+                            await sendEnvelopeAsync(envelope);
+                        }
+                        else
+                        {
+                            Runtime.ScheduleLocalExecutionInMemory(envelope.ScheduledTime!.Value, envelope);
+                        }
                     }
-                }
-                else if (ReferenceEquals(this, Transaction))
-                {
-                    await envelope.StoreAndForwardAsync();
+
+                    // If NullMessageStore, then we're calling a different Send method that is marking the message
+                    if (Runtime.Storage is not NullMessageStore)
+                    {
+                        // See https://github.com/JasperFx/wolverine/issues/1697
+                        Runtime.MessageTracking.Sent(envelope);
+                    }
                 }
                 else
                 {
-                    await envelope.QuickSendAsync();
+                    await sendEnvelopeAsync(envelope);
                 }
             }
             catch (Exception e)
@@ -90,31 +161,68 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
             await flushScheduledMessagesAsync();
         }
 
+        _sent ??= new();
+        _sent.AddRange(_outstanding);
         _outstanding.Clear();
 
         _hasFlushed = true;
-    }
 
-    public async Task AssertAnyRequiredResponseWasGenerated()
-    {
-        if (hasRequestedReply() && _channel is not InvocationCallback && isMissingRequestedReply())
+        async Task sendEnvelopeAsync(Envelope envelope)
         {
-            await SendFailureAcknowledgementAsync(
-                $"No response was created for expected response '{Envelope.ReplyRequested}'");
+            if (ReferenceEquals(this, Transaction))
+            {
+                await envelope.StoreAndForwardAsync();
+            }
+            else
+            {
+                await envelope.QuickSendAsync();
+            }
         }
     }
 
-    public ValueTask CompleteAsync()
+    private List<Envelope>? _sent;
+
+    public async Task AssertAnyRequiredResponseWasGenerated()
+    {
+        if (hasRequestedReply() && _channel is not InvocationCallback)
+        {
+            if (isMissingRequestedReply())
+            {
+                var failureDescription = $"No response was created for expected response '{Envelope.ReplyRequested}' back to reply-uri {Envelope.ReplyUri}. ";
+                if (_outstanding.Any())
+                {
+                    failureDescription += "Actual cascading messages were " +
+                                          _outstanding.Concat(_sent ?? []).Select(x => x.MessageType).Join(", ");
+                }
+                else
+                {
+                    failureDescription += $"No cascading messages were created by this handler for the expected response type {Envelope.ReplyRequested}";
+                }
+
+                await SendFailureAcknowledgementAsync(failureDescription);
+            }
+            else
+            {
+                Activity.Current?.SetTag("reply-uri", Envelope.ReplyUri.ToString());
+                Runtime.Logger.LogInformation("Sending requested reply of type {MessageType} to reply-uri {ReplyUri}", Envelope.ReplyRequested, Envelope.ReplyUri);
+            }
+        }
+    }
+
+    public async ValueTask CompleteAsync()
     {
         if (_channel == null || Envelope == null)
         {
             throw new InvalidOperationException("No Envelope is active for this context");
         }
 
-        return _channel.CompleteAsync(Envelope);
+        if (Envelope.HasBeenAcked) return;
+
+        await _channel.CompleteAsync(Envelope);
+        Envelope.HasBeenAcked = true;
     }
 
-    public ValueTask DeferAsync()
+    public async ValueTask DeferAsync()
     {
         if (_channel == null || Envelope == null)
         {
@@ -122,7 +230,7 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         }
 
         Runtime.MessageTracking.Requeued(Envelope);
-        return _channel.DeferAsync(Envelope);
+        await _channel.DeferAsync(Envelope);
     }
 
     public async Task ReScheduleAsync(DateTimeOffset scheduledTime)
@@ -139,7 +247,7 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         }
         else
         {
-            await Storage.Inbox.ScheduleJobAsync(Envelope);
+            await Storage.Inbox.RescheduleExistingEnvelopeForRetryAsync(Envelope);
         }
     }
 
@@ -147,13 +255,13 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
     {
         // Don't bother with agent commands
         if (Envelope?.Message is IAgentCommand) return;
-        
+
         if (_channel == null || Envelope == null)
         {
             throw new InvalidOperationException("No Envelope is active for this context");
         }
 
-        if (_channel is ISupportDeadLetterQueue c && c.NativeDeadLetterQueueEnabled)
+        if (_channel is ISupportDeadLetterQueue { NativeDeadLetterQueueEnabled: true } c)
         {
             if (Envelope.Batch != null)
             {
@@ -169,7 +277,7 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
 
             return;
         }
-        
+
         if (Envelope.Batch != null)
         {
             foreach (var envelope in Envelope.Batch)
@@ -182,6 +290,9 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
             // If persistable, persist
             await Storage.Inbox.MoveToDeadLetterStorageAsync(Envelope, exception);
         }
+
+        // If this is Inline
+        await _channel.CompleteAsync(Envelope);
     }
 
     public Task RetryExecutionNowAsync()
@@ -293,7 +404,7 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
     /// <param name="context"></param>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
     /// <returns></returns>
-    public ValueTask RespondToSenderAsync(object response)
+    public override ValueTask RespondToSenderAsync(object response)
     {
         if (Envelope == null)
         {
@@ -309,7 +420,15 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         return EndpointFor(Envelope.ReplyUri).SendAsync(response);
     }
 
-    public Envelope? Envelope { get; protected set; }
+    /// <summary>
+    /// Marks the existing envelope for rescheduling
+    /// </summary>
+    /// <param name="rescheduledAt"></param>
+    /// <returns></returns>
+    public override async Task ReScheduleCurrentAsync(DateTimeOffset rescheduledAt)
+    {
+        await ReScheduleAsync(rescheduledAt);
+    }
 
     internal async Task CopyToAsync(IEnvelopeTransaction other)
     {
@@ -370,9 +489,9 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         {
             throw new InvalidOperationException(
                 $"Message of type {message.GetType().FullNameInCode()} implements {typeof(ISideEffect).FullNameInCode()}, and cannot be used as a cascading message. Side effects cannot be mixed in with outgoing cascaded messages.");
-            
+
         }
-        
+
         if (Envelope?.ResponseType != null && (message?.GetType() == Envelope.ResponseType ||
                                                Envelope.ResponseType.IsInstanceOfType(message)))
         {
@@ -434,7 +553,8 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         }
 
         _hasFlushed = false;
-
+        
+        _sent?.Clear();
         _outstanding.Clear();
         Scheduled.Clear();
         Envelope = null;
@@ -445,6 +565,9 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
     internal void ReadEnvelope(Envelope? originalEnvelope, IChannelCallback channel)
     {
         Envelope = originalEnvelope ?? throw new ArgumentNullException(nameof(originalEnvelope));
+
+        originalEnvelope.MaybeCorrectReplyUri();
+
         CorrelationId = originalEnvelope.CorrelationId;
         ConversationId = originalEnvelope.Id;
         _channel = channel;
@@ -472,7 +595,7 @@ public class MessageContext : MessageBus, IMessageContext, IHasTenantId, IEnvelo
         }
         else
         {
-            foreach (var envelope in Scheduled) await Storage.Inbox.ScheduleJobAsync(envelope);
+            foreach (var envelope in Scheduled) await Storage.Inbox.RescheduleExistingEnvelopeForRetryAsync(envelope);
         }
 
         Scheduled.Clear();

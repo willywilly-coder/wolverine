@@ -61,17 +61,28 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
         DataSource = dataSource;
 
         var descriptor = Describe();
+
+        Id = new DatabaseId(descriptor.ServerName, descriptor.DatabaseName);
         
         var parts = new List<string>
         {
             descriptor.Engine.ToLowerInvariant(),
-            descriptor.ServerName,
+            descriptor.ServerName.Split(',')[0],
             descriptor.DatabaseName,
             _schemaName
         };
 
+        Role = databaseSettings.Role;
+
+        if (databaseSettings.Role == MessageStoreRole.Main)
+        {
+            SubjectUri = new Uri("wolverine://messages/main");
+        }
+
         Uri = new Uri($"{PersistenceConstants.AgentScheme}://{parts.Where(x => x.IsNotEmpty()).Join("/")}");
     }
+
+    public MessageStoreRole Role { get; private set; }
 
     public override string ToString()
     {
@@ -84,11 +95,7 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
     }
 
     public Uri Uri { get; protected set; } = new Uri("null://null");
-
-    // This would be set from the parent database, if one exists. Example would be from
-    // gleaning Wolverine message storage off of Marten storage databases
-    public DatabaseDescriptor? Descriptor { get; set; }
-
+    
     public IAdvisoryLock AdvisoryLock { get; protected set; }
 
     public ILogger Logger { get; }
@@ -103,9 +110,17 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
 
     public DurabilitySettings Durability { get; }
 
-    public bool IsMain => Settings.IsMain;
-
     public string Name { get; set; } = TransportConstants.Default;
+    public void PromoteToMain(IWolverineRuntime runtime)
+    {
+        Role = MessageStoreRole.Main;
+        Initialize(runtime);
+    }
+
+    public void DemoteToAncillary()
+    {
+        Role = MessageStoreRole.Ancillary;
+    }
 
     public DatabaseSettings Settings => _settings;
 
@@ -130,22 +145,16 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
 
     public Task EnqueueAsync(IDatabaseOperation operation)
     {
+        // Really probably only an issue w/ testing, but this lets us ignore 
+        // log record saving
+        if (!Durability.DurabilityAgentEnabled) return Task.CompletedTask;
+        
         if (_batcher == null)
         {
             throw new InvalidOperationException($"Message database '{Identifier}' has not yet been initialized for node {Durability.AssignedNodeNumber}");
         }
 
         return _batcher.EnqueueAsync(operation);
-    }
-
-    public void Enqueue(IDatabaseOperation operation)
-    {
-        if (_batcher == null)
-        {
-            throw new InvalidOperationException($"Message database '{Identifier}' has not yet been initialized");
-        }
-
-        _batcher.Enqueue(operation);
     }
 
     public abstract Task PollForScheduledMessagesAsync(ILocalReceiver localQueue, ILogger runtimeLogger,
@@ -158,7 +167,7 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
 
         _batcher = new DatabaseBatcher(this, runtime, runtime.Options.Durability.Cancellation);
 
-        if (Settings.IsMain && runtime.Options.Transports.NodeControlEndpoint == null && runtime.Options.Durability.Mode == DurabilityMode.Balanced)
+        if (Role == MessageStoreRole.Main && runtime.Options.Transports.NodeControlEndpoint == null && runtime.Options.Durability.Mode == DurabilityMode.Balanced)
         {
             var transport = new DatabaseControlTransport(this, runtime.Options);
             runtime.Options.Transports.Add(transport);
@@ -167,9 +176,9 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
         }
     }
 
-    public IMessageStoreAdmin Admin => this;
+    public Uri SubjectUri { get; set; } = new Uri("wolverine://messages");
 
-    public abstract void Describe(TextWriter writer);
+    public IMessageStoreAdmin Admin => this;
 
     public async Task DrainAsync()
     {
@@ -213,19 +222,6 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
 
     public abstract DbCommandBuilder ToCommandBuilder();
 
-    public async Task ReleaseIncomingAsync(int ownerId)
-    {
-        if (_cancellation.IsCancellationRequested) return;
-
-        var count = await _dataSource
-            .CreateCommand(
-                $"update {SchemaName}.{DatabaseConstants.IncomingTable} set owner_id = 0 where owner_id = @owner")
-            .With("owner", ownerId)
-            .ExecuteNonQueryAsync(_cancellation);
-        
-        Logger.LogInformation("Reassigned {Count} incoming messages from {Owner} to any node in the durable inbox", count, ownerId);
-    }
-
     public async Task ReleaseIncomingAsync(int ownerId, Uri receivedAt)
     {
         if (HasDisposed) return;
@@ -265,11 +261,6 @@ public abstract partial class MessageDatabase<T> : DatabaseBase<T>,
         agent.StartScheduledJobPolling();
 
         return agent;
-    }
-
-    public IAgentFamily? BuildAgentFamily(IWolverineRuntime runtime)
-    {
-        return new DurabilityAgentFamily(runtime);
     }
 
     public async ValueTask<ISagaStorage<TId, TSaga>> EnrollAndFetchSagaStorage<TId, TSaga>(MessageContext context) where TSaga : Saga

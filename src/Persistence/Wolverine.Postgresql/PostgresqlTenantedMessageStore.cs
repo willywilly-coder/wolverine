@@ -11,7 +11,7 @@ using Wolverine.Runtime;
 
 namespace Wolverine.Postgresql;
 
-internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessageDatabaseSource
+internal class PostgresqlTenantedMessageStore : ITenantedMessageSource
 {
     private readonly PostgresqlBackedPersistence _persistence;
     private readonly SagaTableDefinition[] _sagaTables;
@@ -26,9 +26,8 @@ internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessage
         _runtime = runtime;
     }
 
-    public ITenantedSource<NpgsqlDataSource> DataSource { get; set; }
-
-    public DatabaseCardinality Cardinality => DataSource.Cardinality;
+    public DatabaseCardinality Cardinality => _persistence.DataSourceTenancy?.Cardinality ??
+                                              _persistence.ConnectionStringTenancy.Cardinality;
     public async ValueTask<IMessageStore> FindAsync(string tenantId)
     {
         if (_stores.TryFind(tenantId, out var store))
@@ -39,19 +38,26 @@ internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessage
         if (_persistence.DataSourceTenancy != null)
         {
             var source = await _persistence.DataSourceTenancy.FindAsync(tenantId);
-            store = buildStoreForDataSource(source);
+            store = buildTenantStoreForDataSource(source);
         }
         else
         {
             var connectionString = await _persistence.ConnectionStringTenancy.FindAsync(tenantId);
-            store = buildStoreForConnectionString(connectionString);
+            store = buildTenantStoreForConnectionString(connectionString);
+        }
+        
+        store.TenantIds.Fill(tenantId);
+
+        if (_runtime.Options.AutoBuildMessageStorageOnStartup != AutoCreate.None)
+        {
+            await store.Admin.MigrateAsync();
         }
         
         _stores = _stores.AddOrUpdate(tenantId, store);
         return store;
     }
 
-    private PostgresqlMessageStore buildStoreForConnectionString(string connectionString)
+    private PostgresqlMessageStore buildTenantStoreForConnectionString(string connectionString)
     {
         PostgresqlMessageStore store;
         // TODO -- do some idempotency so that you don't build two or more stores for the same tenant id
@@ -63,17 +69,18 @@ internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessage
             // TODO -- set the AutoCreate here
             DataSource = npgsqlDataSource,
             ConnectionString = connectionString,
-            IsMain = false,
+            Role = MessageStoreRole.Tenant,
             ScheduledJobLockId = _persistence.ScheduledJobLockId,
             SchemaName = _persistence.EnvelopeStorageSchemaName
         };
 
         store = new PostgresqlMessageStore(settings, _runtime.Options.Durability, npgsqlDataSource,
             _runtime.LoggerFactory.CreateLogger<PostgresqlMessageStore>(), _sagaTables);
+        store.Name = store.Describe().DatabaseUri().ToString();
         return store;
     }
 
-    private PostgresqlMessageStore buildStoreForDataSource(NpgsqlDataSource source)
+    private PostgresqlMessageStore buildTenantStoreForDataSource(NpgsqlDataSource source)
     {
         PostgresqlMessageStore store;
         // TODO -- do some idempotency so that you don't build two or more stores for the same tenant id
@@ -83,7 +90,7 @@ internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessage
             CommandQueuesEnabled = false,
             // TODO -- set the AutoCreate here
             DataSource = source,
-            IsMain = false,
+            Role = MessageStoreRole.Tenant,
             ScheduledJobLockId = _persistence.ScheduledJobLockId,
             SchemaName = _persistence.EnvelopeStorageSchemaName
         };
@@ -104,7 +111,14 @@ internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessage
                 // TODO -- some idempotency
                 if (!_stores.Contains(assignment.TenantId))
                 {
-                    var store = buildStoreForConnectionString(assignment.Value);
+                    var store = buildTenantStoreForConnectionString(assignment.Value);
+                    store.TenantIds.Fill(assignment.TenantId);
+                    
+                    if (_runtime.Options.AutoBuildMessageStorageOnStartup != AutoCreate.None)
+                    {
+                        await store.Admin.MigrateAsync();
+                    }
+                    
                     _stores = _stores.AddOrUpdate(assignment.TenantId, store);
                 }
             }
@@ -118,7 +132,14 @@ internal class PostgresqlTenantedMessageStore : ITenantedMessageSource, IMessage
                 // TODO -- some idempotency
                 if (!_stores.Contains(assignment.TenantId))
                 {
-                    var store = buildStoreForDataSource(assignment.Value);
+                    var store = buildTenantStoreForDataSource(assignment.Value);
+                    store.TenantIds.Fill(assignment.TenantId);
+                    
+                    if (_runtime.Options.AutoBuildMessageStorageOnStartup != AutoCreate.None)
+                    {
+                        await store.Admin.MigrateAsync();
+                    }
+                    
                     _stores = _stores.AddOrUpdate(assignment.TenantId, store);
                 }
             }

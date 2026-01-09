@@ -1,7 +1,7 @@
 # Using Amazon SNS
 
 ::: warning
-At this moment, Wolverine cannot support request/reply mechanics (`IMessageBus.InvokeAsync<T>()`).
+At this moment, Wolverine cannot support request/reply mechanics (`IMessageBus.InvokeAsync<T>()`) with SNS~~~~.
 :::
 
 :::tip
@@ -147,7 +147,35 @@ var host = await Host.CreateDefaultBuilder()
     {
         opts.UseAmazonSnsTransport()
             // Without this, the SubscribeSqsQueue() call does nothing
-            .AutoProvision();
+            // This tells Wolverine to try to ensure all topics, subscriptions,
+            // and SQS queues exist at runtime 
+            .AutoProvision()
+            
+            // *IF* you need to use some kind of custom queue policy in your
+            // SQS queues *and* want to use AutoProvision() as well, this is 
+            // the hook to customize that policy. This is the default though that
+            // we're just showing for an example
+            .QueuePolicyForSqsSubscriptions(description =>
+            {
+                return $$"""
+                         {
+                           "Version": "2012-10-17",
+                           "Statement": [{
+                               "Effect": "Allow",
+                               "Principal": {
+                                   "Service": "sns.amazonaws.com"
+                               },
+                               "Action": "sqs:SendMessage",
+                               "Resource": "{{description.QueueArn}}",
+                               "Condition": {
+                                 "ArnEquals": {
+                                     "aws:SourceArn": "{{description.TopicArn}}"
+                                 }
+                               }
+                           }]
+                         }
+                         """;
+            });
 
         opts.PublishMessage<Message1>()
             .ToSnsTopic("outbound1")
@@ -160,5 +188,14 @@ var host = await Host.CreateDefaultBuilder()
                 });
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/AWS/Wolverine.AmazonSns.Tests/Samples/Bootstrapping.cs#L123-L143' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_sns_topic_subscriptions_creation' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/AWS/Wolverine.AmazonSns.Tests/Samples/Bootstrapping.cs#L123-L171' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_sns_topic_subscriptions_creation' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
+
+## Interoperability
+
+::: tip
+Also see the more generic [Wolverine Guide on Interoperability](/tutorials/interop)
+:::
+
+SNS interoperability is done through the `ISnsEnvelopeMapper`. At this point, SNS supports interoperability through
+MassTransit, NServiceBus, CloudEvents, or user defined mapping strategies.

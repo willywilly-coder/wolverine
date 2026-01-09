@@ -1,6 +1,7 @@
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Microsoft.Extensions.Logging;
+using System.Text;
 using Wolverine.Configuration;
 using Wolverine.Kafka.Internals;
 using Wolverine.Runtime;
@@ -9,7 +10,7 @@ using Wolverine.Transports.Sending;
 
 namespace Wolverine.Kafka;
 
-public class KafkaTopic : Endpoint, IBrokerEndpoint
+public class KafkaTopic : Endpoint<IKafkaEnvelopeMapper, KafkaEnvelopeMapper>, IBrokerEndpoint
 {
     // Strictly an identifier for the endpoint
     public const string WolverineTopicsName = "wolverine.topics";
@@ -22,7 +23,12 @@ public class KafkaTopic : Endpoint, IBrokerEndpoint
         EndpointName = topicName;
         TopicName = topicName;
 
-        Mapper = new KafkaEnvelopeMapper(this);
+        Specification.Name = topicName;
+    }
+
+    protected override KafkaEnvelopeMapper buildMapper(IWolverineRuntime runtime)
+    {
+        return new KafkaEnvelopeMapper(this);
     }
 
     public override bool AutoStartSendingAgent()
@@ -30,10 +36,10 @@ public class KafkaTopic : Endpoint, IBrokerEndpoint
         return true;
     }
 
+    public TopicSpecification Specification { get; } = new();
+
     public string TopicName { get; }
 
-    public IKafkaEnvelopeMapper Mapper { get; set; }
-    
     /// <summary>
     /// Override for this specific Kafka Topic
     /// </summary>
@@ -51,13 +57,18 @@ public class KafkaTopic : Endpoint, IBrokerEndpoint
 
     public override ValueTask<IListener> BuildListenerAsync(IWolverineRuntime runtime, IReceiver receiver)
     {
-        var listener = new KafkaListener(this, ConsumerConfig ?? Parent.ConsumerConfig,
+        EnvelopeMapper ??= BuildMapper(runtime);
+        
+        var config = ConsumerConfig ?? Parent.ConsumerConfig;
+        var listener = new KafkaListener(this, config,
             Parent.CreateConsumer(ConsumerConfig), receiver, runtime.LoggerFactory.CreateLogger<KafkaListener>());
         return ValueTask.FromResult((IListener)listener);
     }
 
     protected override ISender CreateSender(IWolverineRuntime runtime)
     {
+        EnvelopeMapper ??= BuildMapper(runtime);
+        
         return Mode == EndpointMode.Inline
             ? new InlineKafkaSender(this)
             : new BatchedSender(this, new KafkaSenderProtocol(this), runtime.Cancellation,
@@ -66,14 +77,17 @@ public class KafkaTopic : Endpoint, IBrokerEndpoint
 
     public async ValueTask<bool> CheckAsync()
     {
+        // Can't do anything about this
+        if (Parent.Usage == KafkaUsage.ConsumeOnly) return true;
+
         if (TopicName == WolverineTopicsName) return true; // don't care, this is just a marker
         try
         {
             using var client = Parent.CreateProducer(ProducerConfig);
-            await client.ProduceAsync(TopicName, new Message<string, string>
+            await client.ProduceAsync(TopicName, new Message<string, byte[]>
             {
                 Key = "ping",
-                Value = "ping"
+                Value = Encoding.Default.GetBytes("ping")
             });
 
 
@@ -97,16 +111,11 @@ public class KafkaTopic : Endpoint, IBrokerEndpoint
         if (TopicName == WolverineTopicsName) return; // don't care, this is just a marker
 
         using var adminClient = Parent.CreateAdminClient();
+        Specification.Name = TopicName;
 
         try
         {
-            await adminClient.CreateTopicsAsync(
-            [
-                new TopicSpecification
-                {
-                    Name = TopicName
-                }
-            ]);
+            await CreateTopicFunc(adminClient, this);
 
             logger.LogInformation("Created Kafka topic {Topic}", TopicName);
         }
@@ -116,6 +125,11 @@ public class KafkaTopic : Endpoint, IBrokerEndpoint
             throw;
         }
     }
+
+    /// <summary>
+    /// Override how this Kafka topic is created
+    /// </summary>
+    public Func<IAdminClient, KafkaTopic, Task> CreateTopicFunc { get; internal set; } = (c, t) => c.CreateTopicsAsync([t.Specification]);
 }
 
 public enum QualityOfService

@@ -21,6 +21,8 @@ public class multi_tenancy_with_marten_managed_multi_tenancy : MultiTenancyCompl
 
     public override void Configure(WolverineOptions opts)
     {
+        #region sample_use_multi_tenancy_with_both_marten_and_ef_core
+
         opts.Services.AddMarten(m =>
         {
             m.MultiTenantedDatabases(x =>
@@ -31,13 +33,15 @@ public class multi_tenancy_with_marten_managed_multi_tenancy : MultiTenancyCompl
             });
         }).IntegrateWithWolverine(x =>
         {
-            x.MasterDatabaseConnectionString = Servers.PostgresConnectionString;
+            x.MainDatabaseConnectionString = Servers.PostgresConnectionString;
         });
 
         opts.Services.AddDbContextWithWolverineManagedMultiTenancyByDbDataSource<ItemsDbContext>((builder, dataSource, _) =>
         {
             builder.UseNpgsql(dataSource, b => b.MigrationsAssembly("MultiTenantedEfCoreWithPostgreSQL"));
         }, AutoCreate.CreateOrUpdate);
+
+        #endregion
         
         // Little weird, but we have to remove this DbContext to use
         // the lightweight saga persistence

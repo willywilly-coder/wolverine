@@ -47,6 +47,24 @@ return await app.RunJasperFxCommands(args);
 <sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/PersistenceTests/Samples/DocumentationSamples.cs#L164-L190' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_setup_postgresql_storage' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
+## Optimizing the Message Store <Badge type="tip" text="5.3" />
+
+For PostgreSQL, you can enable PostgreSQL backed partitioning for the inbox table
+as an optimization. This is not enabled by default just to avoid causing database
+migrations in a minor point release. Note that this will have some significant benefits
+for inbox/outbox metrics gathering in the future:
+
+<!-- snippet: sample_enabling_inbox_partitioning -->
+<a id='snippet-sample_enabling_inbox_partitioning'></a>
+```cs
+var host = await Host.CreateDefaultBuilder()
+    .UseWolverine(opts =>
+    {
+        opts.Durability.EnableInboxPartitioning = true;
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/PostgresqlTests/compliance_using_table_partitioning.cs#L26-L34' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_enabling_inbox_partitioning' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
 ## PostgreSQL Messaging Transport <Badge type="tip" text="2.5" />
 
 ::: info
@@ -124,6 +142,31 @@ Using this option just means that the PostgreSQL queues can be used for both sen
 with the transactional inbox or outbox. This is a little more performant, but less safe as messages could be
 lost if held in memory when the application shuts down unexpectedly. 
 
+### Polling
+Wolverine has a number of internal polling operations, and any PostgreSQL queues will be polled on a configured interval as Wolverine does not use the PostgreSQL `LISTEN/NOTIFY` feature at this time.   
+The default polling interval is set in the `DurabilitySettings` class and can be configured at runtime as below:
+
+```cs
+var builder = Host.CreateApplicationBuilder();
+builder.UseWolverine(opts =>
+{
+    // Health check message queue/dequeue
+    opts.Durability.HealthCheckPollingTime = TimeSpan.FromSeconds(10);
+    
+    // Node reassigment checks
+    opts.Durability.NodeReassignmentPollingTime = TimeSpan.FromSeconds(5);
+    
+    // User queue poll frequency
+    opts.Durability.ScheduledJobPollingTime = TimeSpan.FromSeconds(5);
+}
+```
+
+::: info Control queue  
+Wolverine has an internal control queue (`dbcontrol`) used for internal operations.  
+This queue is hardcoded to poll every second and should not be changed to ensure the stability of the application.
+:::
+
+
 ## Multi-Tenancy
 
 As of Wolverine 4.0, you have two ways to use multi-tenancy through separate databases per tenant with PostgreSQL:
@@ -161,9 +204,14 @@ builder.UseWolverine(opts =>
             tenants.Register("tenant2", configuration.GetConnectionString("tenant2"));
             tenants.Register("tenant3", configuration.GetConnectionString("tenant3"));
         });
+    
+    opts.Services.AddDbContextWithWolverineManagedMultiTenancy<ItemsDbContext>((builder, connectionString, _) =>
+    {
+        builder.UseNpgsql(connectionString.Value, b => b.MigrationsAssembly("MultiTenantedEfCoreWithPostgreSQL"));
+    }, AutoCreate.CreateOrUpdate);
 });
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L14-L36' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_static_tenant_registry_with_postgresql' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L24-L51' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_static_tenant_registry_with_postgresql' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Since the underlying [Npgsql library](https://www.npgsql.org/) supports the `DbDataSource` concept, and you might need to use this for a variety of reasons, you can also
@@ -173,7 +221,7 @@ Aspire will register `NpgsqlDataSource` services as `Singleton` scoped in your I
 that utilizes the IoC container to register Wolverine like so:
 
 <!-- snippet: sample_OurFancyPostgreSQLMultiTenancy -->
-<a id='snippet-sample_ourfancypostgresqlmultitenancy'></a>
+<a id='snippet-sample_OurFancyPostgreSQLMultiTenancy'></a>
 ```cs
 public class OurFancyPostgreSQLMultiTenancy : IWolverineExtension
 {
@@ -190,13 +238,13 @@ public class OurFancyPostgreSQLMultiTenancy : IWolverineExtension
             .RegisterStaticTenantsByDataSource(tenants =>
             {
                 tenants.Register("tenant1", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant1"));
-                tenants.Register("tenant1", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant2"));
-                tenants.Register("tenant1", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant3"));
+                tenants.Register("tenant2", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant2"));
+                tenants.Register("tenant3", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant3"));
             });
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L82-L105' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_ourfancypostgresqlmultitenancy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L165-L188' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_OurFancyPostgreSQLMultiTenancy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 And add that to the greater application like so:
@@ -211,7 +259,7 @@ var host = Host.CreateDefaultBuilder()
         services.AddSingleton<IWolverineExtension, OurFancyPostgreSQLMultiTenancy>();
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L69-L78' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_adding_our_fancy_postgresql_multi_tenancy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L152-L161' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_adding_our_fancy_postgresql_multi_tenancy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ::: warning
@@ -247,9 +295,10 @@ builder.UseWolverine(opts =>
             seed.Register("tenant2", configuration.GetConnectionString("tenant2"));
             seed.Register("tenant3", configuration.GetConnectionString("tenant3"));
         });
+
 });
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L41-L64' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_postgresql_backed_master_table_tenancy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/EfCoreTests/MultiTenancy/MultiTenancyDocumentationSamples.cs#L95-L119' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_postgresql_backed_master_table_tenancy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ::: info
@@ -266,8 +315,8 @@ Here's some more important background on the multi-tenancy support:
   main database and all the tenant databases including schema migrations
 * Wolverine's transactional middleware is aware of the multi-tenancy and can connect to the correct database based on the `IMesageContext.TenantId`
   or utilize the tenant id detection in Wolverine.HTTP as well
+* You can "plug in" a custom implementation of `ITenantSource<string>` to manage tenant id to connection string assignments in whatever way works for your deployed system
 
-MORE -- other usages, including custom ITenantSource
 
 ## Lightweight Saga Usage <Badge type="tip" text="3.0" />
 

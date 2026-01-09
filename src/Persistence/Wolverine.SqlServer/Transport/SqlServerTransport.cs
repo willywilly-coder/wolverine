@@ -75,6 +75,8 @@ public class SqlServerTransport : BrokerTransport<SqlServerQueue>
         
         var storage = runtime.Storage as SqlServerMessageStore;
 
+        var storage = await runtime.TryFindMainMessageStore<SqlServerMessageStore>();
+
         Storage = storage ?? throw new InvalidOperationException(
             "The Sql Server Transport can only be used if the message persistence is also Sql Server backed");
 

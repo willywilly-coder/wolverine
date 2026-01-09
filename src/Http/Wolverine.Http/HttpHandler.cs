@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Headers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Net.Http.Headers;
 using Wolverine.Http.Runtime.MultiTenancy;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
@@ -25,6 +26,16 @@ public abstract class HttpHandler
         _jsonOptions = wolverineHttpOptions.JsonSerializerOptions.Value;
     }
 
+    public ResponseCacheAttribute? Caching { get; set; }
+    
+    public void WriteCacheControls(HttpContext context, int maxAgeInSeconds, bool noStore)
+    {
+        context.Response.GetTypedHeaders().CacheControl = new()
+        {
+            MaxAge = maxAgeInSeconds.Seconds(), NoStore = noStore, 
+        };
+    }
+
     public async ValueTask<string?> TryDetectTenantId(HttpContext httpContext)
     {
         var tenantId = await _options.TryDetectTenantId(httpContext);
@@ -34,6 +45,22 @@ public abstract class HttpHandler
         }
 
         return tenantId;
+    }
+
+    public Task WriteProblems(int statusCode, string message, HttpContext context, object? identity)
+    {
+        if (identity != null)
+        {
+            message = message.Replace("{Id}", identity.ToString());
+        }
+        
+        var problems = new ProblemDetails
+        {
+            Status = statusCode,
+            Detail = message
+        };
+
+        return Results.Problem(problems).ExecuteAsync(context);
     }
 
     public Task WriteTenantIdNotFound(HttpContext context)
@@ -79,7 +106,7 @@ public abstract class HttpHandler
     {
         if (target is IHttpAware a) a.Apply(context);
     }
-
+    
     private static bool isRequestJson(HttpContext context)
     {
         var contentType = context.Request.ContentType;

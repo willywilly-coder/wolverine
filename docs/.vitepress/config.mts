@@ -1,5 +1,7 @@
 import { withMermaid } from "vitepress-plugin-mermaid"
-import { DefaultTheme, UserConfig } from 'vitepress'
+import { defineConfig, type DefaultTheme, type UserConfig } from 'vitepress'
+import llmstxt from 'vitepress-plugin-llms'
+import blockEmbedPlugin from 'markdown-it-block-embed'
 
 const config: UserConfig<DefaultTheme.Config> = {
     base: '/',
@@ -60,8 +62,9 @@ const config: UserConfig<DefaultTheme.Config> = {
                     text: 'Introduction',
                     collapsed: false,
                     items: [
-                        {text: 'What is Wolverine?', link: '/introduction/whatiswolverine'},
+                        {text: 'What is Wolverine?', link: '/introduction/what-is-wolverine'},
                         {text: 'Getting Started', link: '/introduction/getting-started'},
+                        {text: 'Support Policy', link: '/introduction/support-policy'},
                         {text: 'Wolverine for MediatR Users', link: '/introduction/from-mediatr'},
                         {text: 'Best Practices', link: '/introduction/best-practices'}, 
                     ]
@@ -76,7 +79,12 @@ const config: UserConfig<DefaultTheme.Config> = {
                         {text: 'Vertical Slice Architecture', link: '/tutorials/vertical-slice-architecture'},
                         {text: 'Modular Monoliths', link: '/tutorials/modular-monolith'},
                         {text: 'Event Sourcing and CQRS with Marten', link: '/tutorials/cqrs-with-marten'},
-                        {text: 'Railway Programming with Wolverine', link: '/tutorials/railway-programming'}
+                        {text: 'Railway Programming with Wolverine', link: '/tutorials/railway-programming'},
+                        {text: 'Interoperability with Non-Wolverine Systems', link: '/tutorials/interop'},
+                        {text: 'Leader Election and Agents', link: '/tutorials/leader-election'},
+                        {text: 'Dealing with Concurrency', link:'/tutorials/concurrency'},
+                        {text: 'Dead Letter Queues', link: '/tutorials/dead-letter-queues'},
+                        {text: 'Idempotency in Messaging', link: '/tutorials/idempotency'}
                     ]
                 },
                 {
@@ -112,6 +120,7 @@ const config: UserConfig<DefaultTheme.Config> = {
                                 {text: 'Multi-Tenancy', link: '/guide/handlers/multi-tenancy'},
                                 {text: 'Execution Timeouts', link: '/guide/handlers/timeout'},
                                 {text: 'Fluent Validation Middleware', link: '/guide/handlers/fluent-validation'},
+                                {text: 'DataAnnotations Validation Middleware', link: '/guide/handlers/dataannotations-validation'},
                                 {text: 'Sticky Handler to Endpoint Assignments', link: '/guide/handlers/sticky'},
                                 {text: 'Message Batching', link: '/guide/handlers/batching'},
                                 {text: 'Persistence Helpers', link: '/guide/handlers/persistence'}
@@ -161,7 +170,8 @@ const config: UserConfig<DefaultTheme.Config> = {
                                         {text: 'Dead Letter Queues', link:'/guide/messaging/transports/sqs/deadletterqueues'},
                                         {text: 'Configuring Queues', link:'/guide/messaging/transports/sqs/queues'},
                                         {text: 'Conventional Routing', link:'/guide/messaging/transports/sqs/conventional-routing'},
-                                        {text: 'Interoperability', link:'/guide/messaging/transports/sqs/interoperability'}
+                                        {text: 'Interoperability', link:'/guide/messaging/transports/sqs/interoperability'},
+                                        {text: 'MessageAttributes', link:'/guide/messaging/transports/sqs/message-attributes'}
                                     ]},
                                 {text: 'Amazon SNS', link: '/guide/messaging/transports/sns'},
                                 {text: 'TCP', link: '/guide/messaging/transports/tcp'},
@@ -176,10 +186,15 @@ const config: UserConfig<DefaultTheme.Config> = {
                                 {text: 'Sql Server', link: '/guide/messaging/transports/sqlserver'},
                                 {text: 'PostgreSQL', link: '/guide/messaging/transports/postgresql'},
                                 {text: 'MQTT', link: '/guide/messaging/transports/mqtt'},
+                                {text: 'NATS', link: '/guide/messaging/transports/nats'},
                                 {text: 'Kafka', link: '/guide/messaging/transports/kafka'},
+                                {text: 'SignalR', link: '/guide/messaging/transports/signalr'},
+                                {text: 'Redis', link: '/guide/messaging/transports/redis'},
                                 {text: 'External Database Tables', link: '/guide/messaging/transports/external-tables'}
                             ]
                         },
+                        {text: 'Partitioned Sequential Messaging', link: '/guide/messaging/partitioning'},
+                        {text: 'Unknown Messages', link: '/guide/messaging/unknown'},
                         {text: 'Endpoint Specific Operations', link: '/guide/messaging/endpoint-operations'},
                         {text: 'Broadcast to a Specific Topic', link: '/guide/messaging/broadcast-to-topic'},
                         {text: 'Message Expiration', link: '/guide/messaging/expiration'},
@@ -209,8 +224,10 @@ const config: UserConfig<DefaultTheme.Config> = {
                         {text: 'Uploading Files', link: '/guide/http/files'},
                         {text: 'Integration with Sagas', link: '/guide/http/sagas'},
                         {text: 'Integration with Marten', link: '/guide/http/marten'},
+                        {text: 'Validation', link: '/guide/http/validation'},
                         {text: 'Fluent Validation', link: '/guide/http/fluentvalidation'},
                         {text: 'Problem Details', link: '/guide/http/problemdetails'},
+                        {text: 'Caching', link: '/guide/http/caching'}
                     ]
                 },
                 {
@@ -236,7 +253,14 @@ const config: UserConfig<DefaultTheme.Config> = {
                         {text: 'Sql Server Integration', link: '/guide/durability/sqlserver'},
                         {text: 'PostgreSQL Integration', link: '/guide/durability/postgresql'},
                         {text: 'RavenDb Integration', link: '/guide/durability/ravendb'},
-                        {text: 'Entity Framework Core Integration', link: '/guide/durability/efcore'},
+                        {text: 'Entity Framework Core Integration', collapsed: false, link: '/guide/durability/efcore', items: [
+                                {text: 'Transactional Middleware', link: '/guide/durability/efcore/transactional-middleware'},
+                                {text: 'Transactional Inbox and Outbox', link: '/guide/durability/efcore/outbox-and-inbox'},
+                                {text: 'Operation Side Effects', link: '/guide/durability/efcore/operations'},
+                                {text: 'Saga Storage', link: '/guide/durability/efcore/sagas'},
+                                {text: 'Multi-Tenancy', link: '/guide/durability/efcore/multi-tenancy'}
+                            
+                            ]},
                         {text: 'Managing Message Storage', link: '/guide/durability/managing'},
                         {text: 'Dead Letter Storage', link: '/guide/durability/dead-letter-storage'},
                         {text: 'Idempotent Message Delivery', link:'/guide/durability/idempotency'}
@@ -247,9 +271,15 @@ const config: UserConfig<DefaultTheme.Config> = {
         }
     },
     markdown: {
-        linkify: false
+        linkify: false,
+        config: (md) => {
+            md.use(blockEmbedPlugin)
+        }
     },
-    ignoreDeadLinks: true
+    ignoreDeadLinks: true,
+    vite: {
+        plugins: [llmstxt()]
+    }
 }
 
-export default withMermaid(config);
+export default defineConfig(withMermaid(config));

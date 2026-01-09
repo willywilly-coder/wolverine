@@ -2,7 +2,7 @@
 
 ::: tip
 Unlike some other .NET messaging frameworks, Wolverine does not require specific message handlers to be registered
-at a certain 
+at a certain listening endpoint like a Rabbit MQ queue or Kafka topic.
 :::
 
 A vital piece of Wolverine is defining or configuring endpoints where Wolverine "listens" for incoming messages to 
@@ -139,7 +139,7 @@ In the case where you need messages from a single endpoint to be processed in st
 you have the `ListenWithStrictOrdering()` option:
 
 <!-- snippet: sample_utilizing_ListenWithStrictOrdering -->
-<a id='snippet-sample_utilizing_listenwithstrictordering'></a>
+<a id='snippet-sample_utilizing_ListenWithStrictOrdering'></a>
 ```cs
 var host = await Host.CreateDefaultBuilder().UseWolverine(opts =>
 {
@@ -153,7 +153,7 @@ var host = await Host.CreateDefaultBuilder().UseWolverine(opts =>
         .ListenWithStrictOrdering();
 }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/exclusive_listeners.cs#L34-L48' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_utilizing_listenwithstrictordering' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/exclusive_listeners.cs#L34-L48' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_utilizing_ListenWithStrictOrdering' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 This option does a couple things:

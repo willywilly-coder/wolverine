@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Weasel.Core;
 using Weasel.SqlServer;
 using Wolverine.Logging;
+using Wolverine.Persistence.Durability;
 using Wolverine.Persistence.Durability.DeadLetterManagement;
 using Wolverine.RDBMS;
 using Wolverine.RDBMS.Sagas;
@@ -48,6 +49,33 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
         {
             var storage = typeof(DatabaseSagaSchema<,>).CloseAndBuildAs<IDatabaseSagaSchema>(sagaTableDefinition, _settings, sagaTableDefinition.IdMember.GetMemberType(), sagaTableDefinition.SagaType);
             _sagaStorage = _sagaStorage.AddOrUpdate(sagaTableDefinition.SagaType, storage);
+        }
+        
+        // ReSharper disable once VirtualMemberCallInConstructor
+        var descriptor = Describe();
+        Id = new DatabaseId(descriptor.ServerName, descriptor.DatabaseName);
+    }
+
+    protected override void writeMessageIdArrayQueryList(DbCommandBuilder builder, Guid[] messageIds)
+    {
+        if (messageIds.Length == 1)
+        {
+            builder.Append($" and {DatabaseConstants.Id} = ");
+            builder.AppendParameter(messageIds.Single());
+        }
+        else
+        {
+            builder.Append(" and (");
+            builder.Append($"{DatabaseConstants.Id} = ");
+            builder.AppendParameter(messageIds[0]);
+
+            for (int i = 1; i < messageIds.Length; i++)
+            {
+                builder.Append($" or {DatabaseConstants.Id} = ");
+                builder.AppendParameter(messageIds[i]);
+            }
+            
+            builder.Append(")");
         }
     }
 
@@ -135,46 +163,6 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
     ///     The value of the 'database_principal' parameter in calls to APPLOCK_TEST
     /// </summary>
     public string DatabasePrincipal { get; set; } = "dbo";
-
-    public override Task MarkDeadLetterEnvelopesAsReplayableAsync(Guid[] ids, string? tenantId = null)
-    {
-        var table = new DataTable();
-        table.Columns.Add(new DataColumn("ID", typeof(Guid)));
-        foreach (var id in ids)
-        {
-            table.Rows.Add(id);
-        }
-
-        var command = CreateCommand($"update {SchemaName}.{DatabaseConstants.DeadLetterTable} set {DatabaseConstants.Replayable} = @replay where id in (select ID from @IDLIST)");
-        command.With("replay", true);
-        var list = command.AddNamedParameter("IDLIST", table).As<SqlParameter>();
-        list.SqlDbType = SqlDbType.Structured;
-        list.TypeName = $"{SchemaName}.EnvelopeIdList";
-
-        return command.ExecuteNonQueryAsync(_cancellation);
-    }
-
-    public override Task DeleteDeadLetterEnvelopesAsync(Guid[] ids, string? tenantId = null)
-    {
-        var table = new DataTable();
-        table.Columns.Add(new DataColumn("ID", typeof(Guid)));
-        foreach (var id in ids)
-        {
-            table.Rows.Add(id);
-        }
-
-        var command = CreateCommand($"delete from {SchemaName}.{DatabaseConstants.DeadLetterTable} where id in (select ID from @IDLIST)");
-        var list = command.AddNamedParameter("IDLIST", table).As<SqlParameter>();
-        list.SqlDbType = SqlDbType.Structured;
-        list.TypeName = $"{SchemaName}.EnvelopeIdList";
-
-        return command.ExecuteNonQueryAsync(_cancellation);
-    }
-
-    public override void Describe(TextWriter writer)
-    {
-        writer.WriteLine($"Sql Server Envelope Storage in Schema '{SchemaName}'");
-    }
 
     protected override string determineOutgoingEnvelopeSql(DurabilitySettings settings)
     {
@@ -349,7 +337,7 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
                 {
                     logger.LogInformation("Locally enqueuing scheduled message {Id} of type {MessageType}", envelope.Id,
                         envelope.MessageType);
-                    localQueue.Enqueue(envelope);
+                    await localQueue.EnqueueAsync(envelope);
                 }
             }
         }
@@ -368,8 +356,11 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
             ServerName = builder.DataSource ?? string.Empty,
             DatabaseName = builder.InitialCatalog ?? string.Empty,
             Subject = GetType().FullNameInCode(),
-            SchemaOrNamespace = _settings.SchemaName
+            SchemaOrNamespace = _settings.SchemaName,
+            SubjectUri = SubjectUri
         };
+        
+        descriptor.TenantIds.AddRange(TenantIds);
 
         descriptor.Properties.Add(OptionsValue.Read(builder, x => x.ApplicationName));
         descriptor.Properties.Add(OptionsValue.Read(builder, x => x.Enlist));
@@ -388,7 +379,7 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
 
     public override IEnumerable<ISchemaObject> AllObjects()
     {
-        yield return new OutgoingEnvelopeTable(SchemaName);
+        yield return new OutgoingEnvelopeTable(Durability, SchemaName);
         yield return new IncomingEnvelopeTable(Durability, SchemaName);
         yield return new DeadLettersTable(Durability, SchemaName);
         yield return new EnvelopeIdTable(SchemaName);
@@ -403,13 +394,13 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
             yield return table;
         }
         
-        if (_settings.IsMain)
+        if (Role == MessageStoreRole.Main)
         {
             var nodeTable = new Table(new DbObjectName(SchemaName, DatabaseConstants.NodeTableName));
             nodeTable.AddColumn<Guid>("id").AsPrimaryKey();
             nodeTable.AddColumn<int>("node_number").AutoNumber().NotNull();
-            nodeTable.AddColumn<string>("description").NotNull();
-            nodeTable.AddColumn<string>("uri").NotNull();
+            nodeTable.AddColumn("description", "varchar(max)").NotNull();
+            nodeTable.AddColumn("uri", "varchar(500)").NotNull();
             nodeTable.AddColumn<DateTimeOffset>("started").DefaultValueByExpression("GETUTCDATE()").NotNull();
             nodeTable.AddColumn<DateTimeOffset>("health_check").DefaultValueByExpression("GETUTCDATE()").NotNull();
             nodeTable.AddColumn<string>("version");
@@ -418,7 +409,7 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
             yield return nodeTable;
 
             var assignmentTable = new Table(new DbObjectName(SchemaName, DatabaseConstants.NodeAssignmentsTableName));
-            assignmentTable.AddColumn<string>("id").AsPrimaryKey();
+            assignmentTable.AddColumn("id", "varchar(500)").AsPrimaryKey();
             assignmentTable.AddColumn<Guid>("node_id").ForeignKeyTo(nodeTable.Identifier, "id", onDelete:CascadeAction.Cascade);
             assignmentTable.AddColumn<DateTimeOffset>("started").DefaultValueByExpression("GETUTCDATE()").NotNull();
 
@@ -444,19 +435,28 @@ public class SqlServerMessageStore : MessageDatabase<SqlConnection>
                 tenantTable.AddColumn(StorageConstants.ConnectionStringColumn, "varchar(500)").NotNull();
                 yield return tenantTable;
             }
+            
+            var restrictionTable =
+                new Table(new DbObjectName(SchemaName, DatabaseConstants.AgentRestrictionsTableName));
+            restrictionTable.AddColumn<Guid>("id").AsPrimaryKey();
+            restrictionTable.AddColumn<string>("uri").NotNull();
+            restrictionTable.AddColumn<string>("type").NotNull();
+            restrictionTable.AddColumn<int>("node").NotNull().DefaultValue(0);
+            yield return restrictionTable;
 
             var eventTable = new Table(new DbObjectName(SchemaName, DatabaseConstants.NodeRecordTableName));
             eventTable.AddColumn<int>("id").AutoNumber().AsPrimaryKey();
             eventTable.AddColumn<int>("node_number").NotNull();
-            eventTable.AddColumn<string>("event_name").NotNull();
+            eventTable.AddColumn("event_name", "varchar(500)").NotNull();
             eventTable.AddColumn<DateTimeOffset>("timestamp").DefaultValueByExpression("GETUTCDATE()").NotNull();
             eventTable.AddColumn("description", "varchar(500)").AllowNulls();
             yield return eventTable;
 
-            foreach (var entry in _sagaStorage.Enumerate())
-            {
-                yield return entry.Value.Table;
-            }
+        }
+        
+        foreach (var entry in _sagaStorage.Enumerate())
+        {
+            yield return entry.Value.Table;
         }
     }
 

@@ -10,7 +10,9 @@ using Microsoft.EntityFrameworkCore;
 using JasperFx;
 using JasperFx.Events;
 using JasperFx.Events.Projections;
+using JasperFx.MultiTenancy;
 using JasperFx.Resources;
+using Marten.Linq.CreatedAt;
 using Wolverine;
 using Wolverine.AdminApi;
 using Wolverine.EntityFrameworkCore;
@@ -23,6 +25,7 @@ using Wolverine.Http.Tests.DifferentAssembly.Validation;
 using Wolverine.Http.Transport;
 using Wolverine.Marten;
 using WolverineWebApi;
+using WolverineWebApi.Bugs;
 using WolverineWebApi.Marten;
 using WolverineWebApi.Samples;
 using WolverineWebApi.Things;
@@ -63,6 +66,9 @@ builder.Services.AddAuthorization();
 builder.Services.AddDbContextWithWolverineIntegration<ItemsDbContext>(
     x => x.UseNpgsql(Servers.PostgresConnectionString));
 
+builder.Services.AddKeyedSingleton<IThing, RedThing>("Red");
+builder.Services.AddKeyedScoped<IThing, BlueThing>("Blue");
+builder.Services.AddKeyedTransient<IThing, GreenThing>("Green");
 
 builder.Services.AddMarten(opts =>
 {
@@ -95,6 +101,8 @@ builder.Services.AddSingleton<Recorder>();
 // Need this.
 builder.Host.UseWolverine(opts =>
 {
+    opts.Durability.MessageStorageSchemaName = "wolverine";
+    
     // I'm speeding this up a lot for faster tests
     opts.Durability.ScheduledJobPollingTime = 250.Milliseconds(); 
     
@@ -125,9 +133,25 @@ builder.Host.UseWolverine(opts =>
     });
     
     opts.Policies.Add<BroadcastClientMessages>();
+});
 
-    //opts.CodeGeneration.TypeLoadMode = TypeLoadMode.Dynamic;
-    opts.CodeGeneration.TypeLoadMode = TypeLoadMode.Auto;
+// These settings would apply to *both* Marten and Wolverine
+// if you happen to be using both
+builder.Services.CritterStackDefaults(x =>
+{
+    x.ServiceName = "MyService";
+    x.TenantIdStyle = TenantIdStyle.ForceLowerCase;
+    
+    // You probably won't have to configure this often,
+    // but if you do, this applies to both tools
+    x.ApplicationAssembly = typeof(Program).Assembly;
+    
+    x.Production.GeneratedCodeMode = TypeLoadMode.Static;
+    x.Production.ResourceAutoCreate = AutoCreate.None;
+
+    // These are defaults, but showing for completeness
+    x.Development.GeneratedCodeMode = TypeLoadMode.Dynamic;
+    x.Development.ResourceAutoCreate = AutoCreate.CreateOrUpdate;
 });
 
 builder.Services.ConfigureSystemTextJsonForWolverineOrMinimalApi(o =>
@@ -207,14 +231,21 @@ app.MapWolverineEndpoints(opts =>
     // Opting into the Fluent Validation middleware from
     // Wolverine.Http.FluentValidation
     opts.UseFluentValidationProblemDetailMiddleware();
+    
+    // Or instead, you could use Data Annotations that are built
+    // into the Wolverine.HTTP library
+    opts.UseDataAnnotationsValidationProblemDetailMiddleware();
 
     #endregion
 
     // Only want this middleware on endpoints on this one handler
     opts.AddMiddleware(typeof(BeforeAndAfterMiddleware),
         chain => chain.Method.HandlerType == typeof(MiddlewareEndpoints));
+    opts.AddMiddleware(typeof(LoadTodoMiddleware),
+        chain => chain.Method.HandlerType == typeof(UpdateEndpointWithMiddleware));
+    opts.AddPolicy<LoadTodoPolicy>();
 
-#region sample_user_marten_compiled_query_policy
+    #region sample_user_marten_compiled_query_policy
     opts.UseMartenCompiledQueryResultPolicy();
 #endregion
 
@@ -236,6 +267,7 @@ app.MapWolverineEndpoints(opts =>
 
     opts.AddPolicy<StreamCollisionExceptionPolicy>();
 
+    opts.AddPolicy<FrameRearrangeMiddleware.HttpPolicy>();
 
     #region sample_adding_custom_parameter_handling
 

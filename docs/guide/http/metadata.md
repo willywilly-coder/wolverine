@@ -68,7 +68,7 @@ for finer grained control. Here's a sample from the Wolverine testing code that 
 determine the OpenAPI operation id:
 
 <!-- snippet: sample_WolverineOperationFilter -->
-<a id='snippet-sample_wolverineoperationfilter'></a>
+<a id='snippet-sample_WolverineOperationFilter'></a>
 ```cs
 // This class is NOT distributed in any kind of Nuget today, but feel very free
 // to copy this code into your own as it is at least tested through Wolverine's
@@ -84,7 +84,7 @@ public class WolverineOperationFilter : IOperationFilter // IOperationFilter is 
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/WolverineOperationFilter.cs#L7-L23' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_wolverineoperationfilter' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/WolverineOperationFilter.cs#L7-L23' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_WolverineOperationFilter' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 And that would be registered with Swashbuckle inside of your `Program.Main()` method like so:
@@ -97,7 +97,7 @@ builder.Services.AddSwaggerGen(x =>
     x.OperationFilter<WolverineOperationFilter>();
 });
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Program.cs#L47-L54' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_register_custom_swashbuckle_filter' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Program.cs#L52-L59' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_register_custom_swashbuckle_filter' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ## Operation Id
@@ -135,7 +135,7 @@ an HTTP endpoint, you can have your response type implement the `IHttpAware` int
 consider the `CreationResponse` type in Wolverine:
 
 <!-- snippet: sample_CreationResponse -->
-<a id='snippet-sample_creationresponse'></a>
+<a id='snippet-sample_CreationResponse'></a>
 ```cs
 /// <summary>
 /// Base class for resource types that denote some kind of resource being created
@@ -161,7 +161,7 @@ public record CreationResponse([StringSyntax("Route")]string Url) : IHttpAware
     public static CreationResponse<T> For<T>(T value, string url) => new CreationResponse<T>(url, value);
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http/IHttpAware.cs#L81-L107' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_creationresponse' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http/IHttpAware.cs#L82-L108' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_CreationResponse' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Any endpoint that returns `CreationResponse` or a sub class will automatically expose a status code of `201` for successful
@@ -204,3 +204,54 @@ public class ValidatedCompoundEndpoint2
 ```
 <sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Validation/ValidatedCompoundEndpoint.cs#L33-L61' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_optional_iresult_with_openapi_metadata' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
+
+## With Microsoft.Extensions.ApiDescription.Server
+
+Just a heads up, if you are trying to use [Microsoft.Extensions.ApiDescription.Server](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/openapi/aspnetcore-openapi?view=aspnetcore-9.0&tabs=net-cli%2Cvisual-studio-code#generate-openapi-documents-at-build-time) and
+you get an `ObjectDisposedException` error on compilation against the `IServiceProvider`, follow these steps to fix:
+
+1. Remove `Microsoft.Extensions.ApiDescription.Server` altogether
+2. Just run `dotnet run` to see why your application isn't able to start correctly, and fix *that* problem
+3. Add `Microsoft.Extensions.ApiDescription.Server` back
+
+For whatever reason, the source generator for OpenAPI tries to start the entire application, including Wolverine's
+`IHostedService`, and the whole thing blows up with that very unhelpful message if anything is wrong with the application.
+
+Chances are good that one of the things preventing a successful startup is that Marten and Wolverine will, by default, begin performing their usual tasks immediately  upon startup. This entails connecting to the database, as well as to any external messaging providers you may be using. Since those connections are probably not going to be possible in your build environment, they will need to be disabled while the OpenApi generation is being done.
+
+Microsoft's recomendation for detecting whether the application is running for the purpose of document generation is to use this code:
+```cs
+var generatingOpenApi = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider"
+```
+
+If this mode is detected, all connections can be disabled like so:
+```cs
+builder.Services.DisableAllExternalWolverineTransports();
+builder.Services.DisableAllWolverineMessagePersistence();
+```
+
+Note that a syntactically valid connection string still needs to be provided to Marten, but it does not need to represent a real DB; a minimal placeholder is sufficient.
+Also, if you are using the async daemon, you'll want to use the `DaemonMode.Disabled` mode.
+```cs
+if(generatingOpenApi)
+{
+    builder.Services
+        .AddMarten(ConfigureMarten("Server=.;Database=Foo"))
+        .AddAsyncDaemon(DaemonMode.Disabled)
+        .UseLightweightSessions();
+}
+else
+{
+    // usual Marten config
+}
+```
+
+## With NSwag
+
+Be aware that if you want to use NSwag to generate a .NET/Typescript client for Wolverine.HTTP endpoints, you will need to add this line before `return await app.RunJasperFxCommands(args);`:
+
+```cs
+args = args.Where(arg => !arg.StartsWith("--applicationName")).ToArray();
+```
+
+See the full NSwag demo at https://github.com/JasperFx/wolverine/tree/main/src/Http/NSwagDemonstrator

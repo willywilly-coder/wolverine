@@ -40,10 +40,10 @@ public partial class RabbitMqQueue : RabbitMqEndpoint, IBrokerQueue, IRabbitMqQu
         _parent = parent;
         QueueName = EndpointName = queueName;
         Mode = EndpointMode.Inline;
-
-        if (QueueName != _parent.DeadLetterQueue.QueueName)
+        
+        if (Role == EndpointRole.Application && QueueName != _parent.DeadLetterQueue.QueueName)
         {
-            DeadLetterQueue = _parent.DeadLetterQueue;
+            DeadLetterQueue = _parent.DeadLetterQueue.Clone();
         }
     }
 
@@ -72,7 +72,7 @@ public partial class RabbitMqQueue : RabbitMqEndpoint, IBrokerQueue, IRabbitMqQu
             {
                 case EndpointMode.BufferedInMemory:
                 case EndpointMode.Durable:
-                    return (ushort)(ExecutionOptions.MaxDegreeOfParallelism * 2);
+                    return (ushort)(MaxDegreeOfParallelism * 2);
             }
 
             return 100;
@@ -84,6 +84,11 @@ public partial class RabbitMqQueue : RabbitMqEndpoint, IBrokerQueue, IRabbitMqQu
     ///     Use to override the dead letter queue for this queue
     /// </summary>
     public DeadLetterQueue? DeadLetterQueue { get; set; }
+
+    /// <summary>
+    ///     The unique id for listener that is actively listening to this queue.
+    /// </summary>
+    public string? CustomListenerId { get; set; }
 
     public override async ValueTask<bool> CheckAsync()
     {
@@ -197,6 +202,11 @@ public partial class RabbitMqQueue : RabbitMqEndpoint, IBrokerQueue, IRabbitMqQu
     ///     https://www.rabbitmq.com/dotnet.html
     /// </summary>
     public IDictionary<string, object> Arguments { get; } = new Dictionary<string, object>();
+
+    /// <summary>
+    ///     Arguments for Rabbit MQ channel consume operations
+    /// </summary>
+    public IDictionary<string, object?> ConsumerArguments { get; } = new Dictionary<string, object?>();
 
     /// <summary>
     ///     Create a "time to live" limit for messages in this queue. Sets the Rabbit MQ x-message-ttl argument on a queue
@@ -363,8 +373,14 @@ public partial class RabbitMqQueue : RabbitMqEndpoint, IBrokerQueue, IRabbitMqQu
 
     public override bool TryBuildDeadLetterSender(IWolverineRuntime runtime, out ISender? deadLetterSender)
     {
-        var dlq = _parent.Queues[DeadLetterQueue?.QueueName ?? _parent.DeadLetterQueue.QueueName];
-        deadLetterSender = dlq.CreateSender(runtime);
-        return true;
+        if (DeadLetterQueue is { Mode: DeadLetterQueueMode.Native })
+        {
+            var dlq = _parent.Queues[DeadLetterQueue?.QueueName ?? _parent.DeadLetterQueue.QueueName];
+            deadLetterSender = dlq.CreateSender(runtime);
+            return true;
+        }
+
+        deadLetterSender = default;
+        return false;
     }
 }

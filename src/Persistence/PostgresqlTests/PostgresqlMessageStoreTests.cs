@@ -1,15 +1,19 @@
 ﻿using IntegrationTests;
 using JasperFx.Core;
+using JasperFx.Core.Reflection;
 using Marten;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using Shouldly;
 using Weasel.Core;
 using Wolverine;
 using Wolverine.ComplianceTests;
 using Wolverine.Marten;
+using Wolverine.Persistence.Durability;
 using Wolverine.RDBMS;
 using Wolverine.RDBMS.Durability;
 using Wolverine.RDBMS.Polling;
+using Wolverine.Runtime.Agents;
 using Wolverine.Transports.Tcp;
 
 namespace PostgresqlTests;
@@ -62,6 +66,57 @@ public class PostgresqlMessageStoreTests : MessageStoreCompliance
     }
 
     [Fact]
+    public async Task delete_old_log_node_records()
+    {
+        var nodeRecord1 = new NodeRecord()
+        {
+            AgentUri = new Uri("fake://one"), 
+            Description = "Started", 
+            Id = Guid.NewGuid().ToString(), 
+            NodeNumber = 1,
+            RecordType = NodeRecordType.AgentStarted, ServiceName = "MyService",
+            Timestamp = DateTimeOffset.UtcNow.Subtract(10.Days())
+        };
+        
+        var nodeRecord2 = new NodeRecord()
+        {
+            AgentUri = new Uri("fake://one"), 
+            Description = "Started", 
+            Id = Guid.NewGuid().ToString(), 
+            NodeNumber = 2,
+            RecordType = NodeRecordType.AgentStarted, ServiceName = "MyService",
+            Timestamp = DateTimeOffset.UtcNow.Subtract(4.Days())
+        };
+
+        var messageDatabase = thePersistence.As<IMessageDatabase>();
+        var log = new PersistNodeRecord(messageDatabase.Settings, [nodeRecord1, nodeRecord2]);
+        await theHost.InvokeAsync(new DatabaseOperationBatch(messageDatabase, [log]));
+
+        using var conn = new NpgsqlConnection(Servers.PostgresConnectionString);
+        await conn.OpenAsync();
+        await conn.CreateCommand(
+                $"update receiver.{DatabaseConstants.NodeRecordTableName} set timestamp = :time where node_number = 2")
+            .With("time", DateTimeOffset.UtcNow.Subtract(10.Days()))
+            .ExecuteNonQueryAsync();
+        await conn.CloseAsync();
+        
+        var recent2 = await thePersistence.Nodes.FetchRecentRecordsAsync(100);
+        
+        recent2.Any().ShouldBeTrue();
+
+        var op = new DeleteOldNodeEventRecords((IMessageDatabase)thePersistence,
+            new DurabilitySettings { NodeEventRecordExpirationTime = 5.Days() });
+        
+        var batch = new DatabaseOperationBatch((IMessageDatabase)thePersistence, [op]);
+        await theHost.InvokeAsync(batch);
+
+        var recent = await thePersistence.Nodes.FetchRecentRecordsAsync(100);
+        
+        recent.Any().ShouldBeTrue();
+        recent.Any(x => x.Id == nodeRecord2.Id).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task move_replayable_error_messages_to_incoming()
     {
         /*
@@ -82,7 +137,7 @@ public class PostgresqlMessageStoreTests : MessageStoreCompliance
         await thePersistence.Inbox.MoveToDeadLetterStorageAsync(replayableEnvelope, applicationException);
 
         // make one of the messages(DivideByZeroException) replayable
-        var replayableErrorMessagesCountAfterMakingReplayable = await thePersistence
+        await thePersistence
             .DeadLetters
             .MarkDeadLetterEnvelopesAsReplayableAsync(divideByZeroException.GetType().FullName!);
 
@@ -93,7 +148,6 @@ public class PostgresqlMessageStoreTests : MessageStoreCompliance
 
         var counts = await thePersistence.Admin.FetchCountsAsync();
 
-        replayableErrorMessagesCountAfterMakingReplayable.ShouldBe(1);
         counts.DeadLetter.ShouldBe(1);
         counts.Incoming.ShouldBe(1);
         counts.Scheduled.ShouldBe(0);
@@ -128,4 +182,5 @@ public class PostgresqlMessageStoreTests : MessageStoreCompliance
         counts.Scheduled.ShouldBe(0);
         counts.Handled.ShouldBe(0);
     }
+
 }

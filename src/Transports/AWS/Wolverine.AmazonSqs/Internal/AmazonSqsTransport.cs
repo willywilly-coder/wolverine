@@ -15,10 +15,15 @@ public class AmazonSqsTransport : BrokerTransport<AmazonSqsQueue>
 
     public const char Separator = '-';
 
-    public AmazonSqsTransport() : base("sqs", "Amazon SQS")
+    public AmazonSqsTransport(string protocol) : base(protocol, "Amazon SQS")
     {
         Queues = new LightweightCache<string, AmazonSqsQueue>(name => new AmazonSqsQueue(name, this));
         IdentifierDelimiter = "-";
+    }
+
+    public AmazonSqsTransport() : this("sqs")
+    {
+
     }
 
     public override Uri ResourceUri => new Uri(Config.ServiceURL);
@@ -128,4 +133,6 @@ public class AmazonSqsTransport : BrokerTransport<AmazonSqsQueue>
         CredentialSource = _ => new BasicAWSCredentials("ignore", "ignore");
         Config.ServiceURL = $"http://localhost:{port}";
     }
+
+    public string ServerHost => Config.ServiceURL?.ToUri().Host;
 }

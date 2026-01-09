@@ -1,3 +1,4 @@
+using JasperFx;
 using JasperFx.CodeGeneration;
 using Wolverine.Configuration;
 using Wolverine.Runtime;
@@ -31,7 +32,12 @@ public enum ValueSource
     /// <summary>
     /// The value should be sourced by a route argument of an HTTP request
     /// </summary>
-    RouteValue
+    RouteValue,
+    
+    /// <summary>
+    /// The value should be sourced by a query string parameter of an HTTP request
+    /// </summary>
+    FromQueryString
 }
 
 #endregion

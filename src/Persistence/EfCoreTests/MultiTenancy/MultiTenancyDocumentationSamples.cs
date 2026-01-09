@@ -1,9 +1,17 @@
+using JasperFx;
+using JasperFx.Core;
 using JasperFx.MultiTenancy;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
+using SharedPersistenceModels.Items;
+using SharedPersistenceModels.Orders;
 using Wolverine;
+using Wolverine.ComplianceTests;
+using Wolverine.ComplianceTests.Scheduling;
+using Wolverine.EntityFrameworkCore;
 using Wolverine.Postgresql;
 using Wolverine.SqlServer;
 
@@ -33,6 +41,11 @@ public class MultiTenancyDocumentationSamples
                     tenants.Register("tenant2", configuration.GetConnectionString("tenant2"));
                     tenants.Register("tenant3", configuration.GetConnectionString("tenant3"));
                 });
+            
+            opts.Services.AddDbContextWithWolverineManagedMultiTenancy<ItemsDbContext>((builder, connectionString, _) =>
+            {
+                builder.UseNpgsql(connectionString.Value, b => b.MigrationsAssembly("MultiTenantedEfCoreWithPostgreSQL"));
+            }, AutoCreate.CreateOrUpdate);
         });
 
         #endregion
@@ -60,6 +73,18 @@ public class MultiTenancyDocumentationSamples
                     tenants.Register("tenant2", configuration.GetConnectionString("tenant2"));
                     tenants.Register("tenant3", configuration.GetConnectionString("tenant3"));
                 });
+            
+            // Just to show that you *can* use more than one DbContext
+            opts.Services.AddDbContextWithWolverineManagedMultiTenancy<ItemsDbContext>((builder, connectionString, _) =>
+            {
+                // You might have to set the migration assembly
+                builder.UseSqlServer(connectionString.Value, b => b.MigrationsAssembly("MultiTenantedEfCoreWithSqlServer"));
+            }, AutoCreate.CreateOrUpdate);
+        
+            opts.Services.AddDbContextWithWolverineManagedMultiTenancy<OrdersDbContext>((builder, connectionString, _) =>
+            {
+                builder.UseSqlServer(connectionString.Value, b => b.MigrationsAssembly("MultiTenantedEfCoreWithSqlServer"));
+            }, AutoCreate.CreateOrUpdate);
         });
 
         #endregion
@@ -88,6 +113,7 @@ public class MultiTenancyDocumentationSamples
                     seed.Register("tenant2", configuration.GetConnectionString("tenant2"));
                     seed.Register("tenant3", configuration.GetConnectionString("tenant3"));
                 });
+
         });
 
         #endregion
@@ -153,9 +179,41 @@ public class OurFancyPostgreSQLMultiTenancy : IWolverineExtension
             .RegisterStaticTenantsByDataSource(tenants =>
             {
                 tenants.Register("tenant1", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant1"));
-                tenants.Register("tenant1", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant2"));
-                tenants.Register("tenant1", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant3"));
+                tenants.Register("tenant2", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant2"));
+                tenants.Register("tenant3", _provider.GetRequiredKeyedService<NpgsqlDataSource>("tenant3"));
             });
+    }
+}
+
+#endregion
+
+#region sample_using_IDbContextOutboxFactory
+
+public class MyMessageHandler
+{
+    private readonly IDbContextOutboxFactory _factory;
+
+    public MyMessageHandler(IDbContextOutboxFactory factory)
+    {
+        _factory = factory;
+    }
+
+    public async Task HandleAsync(CreateItem command, TenantId tenantId, CancellationToken cancellationToken)
+    {
+        // Get an EF Core DbContext wrapped in a Wolverine IDbContextOutbox<ItemsDbContext>
+        // for message sending wrapped in a transaction spanning the DbContext and Wolverine
+        var outbox = await _factory.CreateForTenantAsync<ItemsDbContext>(tenantId.Value, cancellationToken);
+        var item = new Item { Name = command.Name, Id = CombGuidIdGeneration.NewGuid() };
+
+        outbox.DbContext.Items.Add(item);
+        
+        // Don't worry, this messages doesn't *actually* get sent until
+        // the transaction succeeds
+        await outbox.PublishAsync(new ItemCreated { Id = item.Id });
+
+        // Save and commit the unit of work with the outgoing message,
+        // then "flush" the outgoing messages through Wolverine
+        await outbox.SaveChangesAndFlushMessagesAsync(cancellationToken);
     }
 }
 

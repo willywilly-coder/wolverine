@@ -3,64 +3,111 @@ using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
 using JasperFx.Core.Reflection;
+using Marten;
 using Marten.Events;
 
 namespace Wolverine.Marten.Codegen;
 
-internal class LoadAggregateFrame<T> : MethodCall where T : class
+internal class LoadAggregateFrame : AsyncFrame,  IBatchableFrame
 {
-    private readonly AggregateHandlerAttribute _att;
-    private Variable? _command;
+    private readonly AggregateHandling _att;
+    private Variable? _session;
+    private Variable? _token;
+    private Variable? _batchQuery;
+    private Variable? _batchQueryItem;
+    private readonly Variable _identity;
+    private readonly Variable? _version;
+    private readonly Type _eventStreamType;
+    private readonly Variable _rawIdentity;
 
-    public LoadAggregateFrame(AggregateHandlerAttribute att) : base(typeof(IEventStoreOperations), FindMethod(att))
+
+    public LoadAggregateFrame(AggregateHandling att)
     {
         _att = att;
-        CommentText = "Loading Marten aggregate";
+        _identity = _att.AggregateId;
         
-        // Placeholder to keep the HTTP chains from trying to use QueryString
-        Arguments[0] = Constant.ForString("temp");
+        if (_att is { LoadStyle: ConcurrencyStyle.Optimistic, Version: not null })
+        {
+            _version = _att.Version;
+        }
+
+        _eventStreamType = typeof(IEventStream<>).MakeGenericType(_att.AggregateType);
+        Stream = new Variable(_eventStreamType, this);
+
+        _rawIdentity = _identity;
+        if (_rawIdentity.VariableType != typeof(Guid) && _rawIdentity.VariableType != typeof(string))
+        {
+            var valueType = ValueTypeInfo.ForType(_rawIdentity.VariableType);
+            _rawIdentity = new MemberAccessVariable(_identity, valueType.ValueProperty);
+        }
+    }
+    
+    public Variable Stream { get; }
+
+    public void WriteCodeToEnlistInBatchQuery(GeneratedMethod method, ISourceWriter writer)
+    {
+        if (_att.LoadStyle == ConcurrencyStyle.Exclusive)
+        {
+            writer.WriteLine($"var {_batchQueryItem.Usage} = {_batchQuery!.Usage}.Events.FetchForExclusiveWriting<{_att.AggregateType.FullNameInCode()}>({_rawIdentity.Usage});");
+        }
+        else if (_version == null)
+        {
+            writer.WriteLine($"var {_batchQueryItem.Usage} = {_batchQuery!.Usage}.Events.FetchForWriting<{_att.AggregateType.FullNameInCode()}>({_rawIdentity.Usage});");
+        }
+        else
+        {
+            writer.WriteLine($"var {_batchQueryItem.Usage} = {_batchQuery!.Usage}.Events.FetchForWriting<{_att.AggregateType.FullNameInCode()}>({_rawIdentity.Usage}, {_version.Usage});");
+        }
+    }
+
+    public void EnlistInBatchQuery(Variable batchQuery)
+    {
+        _batchQueryItem = new Variable(typeof(Task<>).MakeGenericType(_eventStreamType), Stream.Usage + "_BatchItem",
+            this);
+        _batchQuery = batchQuery;
     }
 
     public override IEnumerable<Variable> FindVariables(IMethodVariables chain)
     {
-        _command = chain.FindVariable(_att.CommandType!);
-        yield return _command;
+        yield return _identity;
+        if (_version != null) yield return _version;
+        
+        _session = chain.FindVariable(typeof(IDocumentSession));
+        yield return _session;
 
-        Arguments[0] = new Variable(_att.AggregateIdMember.GetRawMemberType(),"aggregateId");
-        if (_att.LoadStyle == ConcurrencyStyle.Optimistic && _att.VersionMember != null)
+        _token = chain.FindVariable(typeof(CancellationToken));
+        yield return _token;
+
+        if (_batchQuery != null)
         {
-            Arguments[1] = new MemberAccessVariable(_command, _att.VersionMember);
+            yield return _batchQuery;
         }
-
-        foreach (var variable in base.FindVariables(chain)) yield return variable;
     }
 
     public override void GenerateCode(GeneratedMethod method, ISourceWriter writer)
     {
-        writer.WriteLine($"var aggregateId = {_command.Usage}.{_att.AggregateIdMember.Name};");
-        base.GenerateCode(method, writer);
-    }
-
-    internal static MethodInfo FindMethod(AggregateHandlerAttribute att)
-    {
-        var isGuidIdentified = att.AggregateIdMember!.GetMemberType() == typeof(Guid);
-
-        if (att.LoadStyle == ConcurrencyStyle.Exclusive)
+        writer.WriteComment("Loading Marten aggregate as part of the aggregate handler workflow");
+        if (_batchQueryItem == null)
         {
-            return isGuidIdentified
-                ? ReflectionHelper.GetMethod<IEventStoreOperations>(x => x.FetchForExclusiveWriting<T>(Guid.Empty, default))!
-                : ReflectionHelper.GetMethod<IEventStoreOperations>(x => x.FetchForExclusiveWriting<T>(string.Empty, default))!;
+            if (_att.LoadStyle == ConcurrencyStyle.Exclusive)
+            {
+                writer.WriteLine($"var {Stream.Usage} = await {_session!.Usage}.Events.FetchForExclusiveWriting<{_att.AggregateType.FullNameInCode()}>({_rawIdentity.Usage}, {_token.Usage});");
+            }
+            else if (_version == null)
+            {
+                writer.WriteLine($"var {Stream.Usage} = await {_session!.Usage}.Events.FetchForWriting<{_att.AggregateType.FullNameInCode()}>({_rawIdentity.Usage}, {_token.Usage});");
+            }
+            else
+            {
+                writer.WriteLine($"var {Stream.Usage} = await {_session!.Usage}.Events.FetchForWriting<{_att.AggregateType.FullNameInCode()}>({_rawIdentity.Usage}, {_version.Usage}, {_token.Usage});");
+            }
         }
-
-        if (att.VersionMember == null)
+        else
         {
-            return isGuidIdentified
-                ? ReflectionHelper.GetMethod<IEventStoreOperations>(x => x.FetchForWriting<T>(Guid.Empty, default))!
-                : ReflectionHelper.GetMethod<IEventStoreOperations>(x => x.FetchForWriting<T>(string.Empty, default))!;
+            writer.Write(
+                $"var {Stream.Usage} = await {_batchQueryItem.Usage}.ConfigureAwait(false);"); 
         }
-
-        return isGuidIdentified
-            ? ReflectionHelper.GetMethod<IEventStoreOperations>(x => x.FetchForWriting<T>(Guid.Empty, long.MaxValue, default))!
-            : ReflectionHelper.GetMethod<IEventStoreOperations>(x => x.FetchForWriting<T>(string.Empty, long.MaxValue, default))!;
+        
+        Next?.GenerateCode(method, writer);
     }
 }

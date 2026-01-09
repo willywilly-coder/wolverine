@@ -8,7 +8,7 @@ everything is just a message.
 The two key parts of a Wolverine application are messages:
 
 <!-- snippet: sample_DebutAccount_command -->
-<a id='snippet-sample_debutaccount_command'></a>
+<a id='snippet-sample_DebutAccount_command'></a>
 ```cs
 // A "command" message
 public record DebitAccount(long AccountId, decimal Amount);
@@ -16,13 +16,13 @@ public record DebitAccount(long AccountId, decimal Amount);
 // An "event" message
 public record AccountOverdrawn(long AccountId);
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageBusBasics.cs#L69-L77' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_debutaccount_command' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageBusBasics.cs#L76-L84' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_DebutAccount_command' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 And the message handling code for the messages, which in Wolverine's case just means a function or method that accepts the message type as its first argument like so:
 
 <!-- snippet: sample_DebitAccountHandler -->
-<a id='snippet-sample_debitaccounthandler'></a>
+<a id='snippet-sample_DebitAccountHandler'></a>
 ```cs
 public static class DebitAccountHandler
 {
@@ -32,7 +32,7 @@ public static class DebitAccountHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageBusBasics.cs#L57-L67' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_debitaccounthandler' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageBusBasics.cs#L64-L74' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_DebitAccountHandler' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ## Invoking a Message Inline
@@ -176,7 +176,7 @@ take advantage of the persistent outbox mechanism in Wolverine. To opt into maki
 // I overrode the buffering limits just to show
 // that they exist for "back pressure"
 opts.ListenToAzureServiceBusQueue("incoming")
-    .UseDurableInbox(new BufferingLimits(1000, 200));
+.UseDurableInbox(new BufferingLimits(1000, 200));
 
 opts.PublishAllMessages().ToAzureServiceBusQueue("outgoing")
     .UseDurableOutbox();
@@ -239,19 +239,42 @@ The stateful, running "agents" are exposed through an `IAgent`
 interface like so:
 
 <!-- snippet: sample_IAgent -->
-<a id='snippet-sample_iagent'></a>
+<a id='snippet-sample_IAgent'></a>
 ```cs
 /// <summary>
 ///     Models a constantly running background process within a Wolverine
 ///     node cluster
 /// </summary>
-public interface IAgent : IHostedService
+public interface IAgent : IHostedService // Standard .NET interface for background services
 {
     /// <summary>
     ///     Unique identification for this agent within the Wolverine system
     /// </summary>
     Uri Uri { get; }
     
+    // Not really used for anything real *yet*, but 
+    // hopefully becomes something useful for CritterWatch
+    // health monitoring
+    AgentStatus Status { get; }
+}
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Agents/IAgent.cs#L9-L28' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IAgent' title='Start of snippet'>anchor</a></sup>
+<a id='snippet-sample_IAgent-1'></a>
+```cs
+/// <summary>
+///     Models a constantly running background process within a Wolverine
+///     node cluster
+/// </summary>
+public interface IAgent : IHostedService // Standard .NET interface for background services
+{
+    /// <summary>
+    ///     Unique identification for this agent within the Wolverine system
+    /// </summary>
+    Uri Uri { get; }
+    
+    // Not really used for anything real *yet*, but 
+    // hopefully becomes something useful for CritterWatch
+    // health monitoring
     AgentStatus Status { get; }
 }
 
@@ -273,7 +296,7 @@ public class CompositeAgent : IAgent
             await agent.StartAsync(cancellationToken);
         }
 
-        Status = AgentStatus.Started;
+        Status = AgentStatus.Running;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -283,26 +306,19 @@ public class CompositeAgent : IAgent
             await agent.StopAsync(cancellationToken);
         }
 
-        Status = AgentStatus.Started;
+        Status = AgentStatus.Running ;
     }
 
     public AgentStatus Status { get; private set; } = AgentStatus.Stopped;
 }
-
-public enum AgentStatus
-{
-    Started,
-    Stopped,
-    Paused
-}
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Agents/IAgent.cs#L6-L63' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_iagent' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Agents/IAgent.cs#L7-L64' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IAgent-1' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 With related groups of agents built and assigned by IoC-registered implementations of this interface:
 
 <!-- snippet: sample_IAgentFamily -->
-<a id='snippet-sample_iagentfamily'></a>
+<a id='snippet-sample_IAgentFamily'></a>
 ```cs
 /// <summary>
 ///     Pluggable model for managing the assignment and execution of stateful, "sticky"
@@ -344,7 +360,7 @@ public interface IAgentFamily
     ValueTask EvaluateAssignmentsAsync(AssignmentGrid assignments);
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Agents/IAgentFamily.cs#L16-L58' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_iagentfamily' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Agents/IAgentFamily.cs#L16-L58' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IAgentFamily' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Built in examples of the agent and agent family are:

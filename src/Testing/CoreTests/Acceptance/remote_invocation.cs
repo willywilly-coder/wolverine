@@ -35,6 +35,8 @@ public class remote_invocation : IAsyncLifetime
             {
                 opts.ServiceName = "Receiver1";
                 opts.ListenAtPort(_receiver1Port);
+
+                opts.EnableAutomaticFailureAcks = true;
             }).StartAsync();
 
         _receiver2 = await Host.CreateDefaultBuilder()
@@ -42,6 +44,8 @@ public class remote_invocation : IAsyncLifetime
             {
                 opts.ServiceName = "Receiver2";
                 opts.ListenAtPort(_receiver2Port);
+                
+                opts.EnableAutomaticFailureAcks = true;
             }).StartAsync();
 
         _sender = await Host.CreateDefaultBuilder()
@@ -57,6 +61,8 @@ public class remote_invocation : IAsyncLifetime
 
                 opts.PublishMessage<Request4>().ToPort(_receiver1Port);
                 opts.PublishMessage<Request4>().ToPort(_receiver2Port);
+                
+                opts.EnableAutomaticFailureAcks = true;
             }).StartAsync();
     }
 
@@ -66,11 +72,6 @@ public class remote_invocation : IAsyncLifetime
         await _receiver2.StopAsync();
         await _sender.StopAsync();
     }
-
-    /*
-
-     * Pass CancellationToken through to ReplyListener
-     */
 
     [Fact]
     public async Task request_reply_with_no_reply()

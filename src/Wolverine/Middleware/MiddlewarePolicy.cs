@@ -1,4 +1,5 @@
 using System.Reflection;
+using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
@@ -53,11 +54,35 @@ public class MiddlewarePolicy : IChainPolicy
                 $"It's not currently legal in Wolverine to return the message type for a handler or the request type for an HTTP chain from middleware. Chain: {chain}. If you receive this on the compilation for an HTTP endpoint, you may want to use [NotBody] on the HTTP endpoint parameter so Wolverine will not use that parameter as the request body model");
         }
 
-        for (var i = 0; i < befores.Length; i++)
-        {
-            chain.Middleware.Insert(i, befores[i]);
-        }
+        var position = 0;
 
+        foreach (var before in befores)
+        {
+            chain.Middleware.Insert(position, before);
+            if (before is MethodCall frame)
+            {
+                AssertMethodDoesNotHaveDuplicateReturnValues(frame);
+                
+                // TODO -- might generalize this a bit. Have a more generic mode of understanding return values
+                // like the HTTP support has
+                var outgoings = frame.Creates.Where(x => x.VariableType == typeof(OutgoingMessages)).ToArray();
+                int start = 200;
+                foreach (var outgoing in outgoings)
+                {
+                    outgoing.OverrideName(outgoing.Usage + (++start));
+                    chain.Middleware.Insert(++position, new CaptureCascadingMessages(outgoing));
+                }
+
+                // Potentially add handling for IResult or HandlerContinuation
+                if (rules.TryFindContinuationHandler(chain, frame, out var continuation))
+                {
+                    chain.Middleware.Insert(++position, continuation!);
+                }
+            }
+
+            position++;
+        }
+        
         var afters = applications.ToArray().Reverse().SelectMany(x => x.BuildAfterCalls(chain, rules)).ToArray();
         
         if (afters.Any())
@@ -74,32 +99,37 @@ public class MiddlewarePolicy : IChainPolicy
     public Application AddType(Type middlewareType, Func<IChain, bool>? filter = null)
     {
         filter ??= _ => true;
-        var application = new Application(middlewareType, filter);
+        var application = new Application(null, middlewareType, filter);
         _applications.Add(application);
         return application;
     }
 
-    public static IEnumerable<MethodInfo> FilterMethods<T>(IEnumerable<MethodInfo> methods, string[] validNames)
-        where T : Attribute
+    public static IEnumerable<MethodInfo> FilterMethods<T>(IChain? chain, IEnumerable<MethodInfo> methods,
+        string[] validNames)
+        where T : ScopedMiddlewareAttribute
     {
+        // MatchesScope watches out for null chain
         return methods
-            .Where(x => !x.HasAttribute<WolverineIgnoreAttribute>())
+            .Where(x => !x.HasAttribute<WolverineIgnoreAttribute>() && chain!.MatchesScope(x))
             .Where(x => validNames.Contains(x.Name) || x.HasAttribute<T>());
     }
 
     public class Application
     {
+        private readonly IChain? _chain;
         private readonly MethodInfo[] _afters;
         private readonly MethodInfo[] _befores;
         private readonly ConstructorInfo? _constructor;
         private readonly MethodInfo[] _finals;
-
-        public Application(Type middlewareType, Func<IChain, bool> filter)
+        
+        public Application(IChain? chain, Type middlewareType, Func<IChain, bool> filter)
         {
             if (!middlewareType.IsPublic && !middlewareType.IsVisible)
             {
                 throw new InvalidWolverineMiddlewareException(middlewareType);
             }
+
+            _chain = chain;
 
             if (!middlewareType.IsStatic())
             {
@@ -115,11 +145,11 @@ public class MiddlewarePolicy : IChainPolicy
             MiddlewareType = middlewareType;
             Filter = filter;
 
-            var methods = middlewareType.GetMethods().ToArray();
+            var methods = middlewareType.GetMethods().Where(x => x.DeclaringType != typeof(object)).ToArray();
 
-            _befores = FilterMethods<WolverineBeforeAttribute>(methods, BeforeMethodNames).ToArray();
-            _afters = FilterMethods<WolverineAfterAttribute>(methods, AfterMethodNames).ToArray();
-            _finals = FilterMethods<WolverineFinallyAttribute>(methods, FinallyMethodNames).ToArray();
+            _befores = FilterMethods<WolverineBeforeAttribute>(chain, methods, BeforeMethodNames).ToArray();
+            _afters = FilterMethods<WolverineAfterAttribute>(chain, methods, AfterMethodNames).ToArray();
+            _finals = FilterMethods<WolverineFinallyAttribute>(chain, methods, FinallyMethodNames).ToArray();
 
             if (_befores.Length == 0 &&
                 _afters.Length == 0 &&
@@ -217,6 +247,8 @@ public class MiddlewarePolicy : IChainPolicy
                 {
                     AssertMethodDoesNotHaveDuplicateReturnValues(call);
 
+                    chain.ApplyParameterMatching(call);
+
                     foreach (var frame in wrapBeforeFrame(chain, call, rules)) yield return frame;
                 }
             }
@@ -275,7 +307,9 @@ public class MiddlewarePolicy : IChainPolicy
                 }
                 else
                 {
-                    yield return new MethodCall(MiddlewareType, after);
+                    var methodCall = new MethodCall(MiddlewareType, after);
+                    chain.ApplyParameterMatching(methodCall);
+                    yield return methodCall;
                 }
             }
         }

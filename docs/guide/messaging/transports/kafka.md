@@ -13,6 +13,10 @@ To use [Kafka](https://www.confluent.io/what-is-apache-kafka/) as a messaging tr
 dotnet add WolverineFx.Kafka
 ```
 
+```warning
+The configuration in `ConfigureConsumer()` for each topic completely overwrites any previous configuration
+```
+
 To connect to Kafka, use this syntax:
 
 <!-- snippet: sample_bootstrapping_with_kafka -->
@@ -66,6 +70,25 @@ using var host = await Host.CreateDefaultBuilder()
         opts.PublishMessage<ColorMessage>()
             .ToKafkaTopic("colors")
             
+            // Fine tune how the Kafka Topic is declared by Wolverine
+            .Specification(spec =>
+            {
+                spec.NumPartitions = 6;
+                spec.ReplicationFactor = 3;
+            })
+            
+            // OR, you can completely control topic creation through this:
+            .TopicCreation(async (client, topic) =>
+            {
+                topic.Specification.NumPartitions = 8;
+                topic.Specification.ReplicationFactor = 2;
+                
+                // You do have full access to the IAdminClient to do
+                // whatever you need to do
+
+                await client.CreateTopicsAsync([topic.Specification]);
+            })
+            
             // Override the producer configuration for just this topic
             .ConfigureProducer(config =>
             {
@@ -80,13 +103,23 @@ using var host = await Host.CreateDefaultBuilder()
             
             // Override the consumer configuration for only this 
             // topic
+            // This is NOT combinatorial with the ConfigureConsumers() call above
+            // and completely replaces the parent configuration
             .ConfigureConsumer(config =>
             {
                 // This will also set the Envelope.GroupId for any
                 // received messages at this topic
                 config.GroupId = "foo";
-                
+                config.BootstrapServers = "localhost:9092";
+
                 // Other configuration
+            })
+            
+            // Fine tune how the Kafka Topic is declared by Wolverine
+            .Specification(spec =>
+            {
+                spec.NumPartitions = 6;
+                spec.ReplicationFactor = 3;
             });
 
         opts.ListenToKafkaTopic("green")
@@ -98,7 +131,7 @@ using var host = await Host.CreateDefaultBuilder()
         opts.Services.AddResourceSetupOnStartup();
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/Kafka/Wolverine.Kafka.Tests/DocumentationSamples.cs#L11-L94' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_bootstrapping_with_kafka' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/Kafka/Wolverine.Kafka.Tests/DocumentationSamples.cs#L14-L126' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_bootstrapping_with_kafka' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 The various `Configure*****()` methods provide quick access to the full API of the Confluent Kafka library for security
@@ -121,6 +154,10 @@ public static ValueTask publish_by_partition_key(IMessageBus bus)
 <!-- endSnippet -->
 
 ## Interoperability
+
+::: tip
+Also see the more generic [Wolverine Guide on Interoperability](/tutorials/interop)
+:::
 
 It's a complex world out there, and it's more than likely you'll need your Wolverine application to interact with system
 that aren't also Wolverine applications. At this time, it's possible to send or receive raw JSON through Kafka and Wolverine
@@ -174,7 +211,7 @@ When receiving messages through Kafka and Wolverine, there are some useful eleme
 on the Wolverine `Envelope` you can use for instrumentation or diagnostics as shown in this sample middleware:
 
 <!-- snippet: sample_KafkaInstrumentation_middleware -->
-<a id='snippet-sample_kafkainstrumentation_middleware'></a>
+<a id='snippet-sample_KafkaInstrumentation_middleware'></a>
 ```cs
 public static class KafkaInstrumentation
 {
@@ -187,5 +224,63 @@ public static class KafkaInstrumentation
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/Kafka/Wolverine.Kafka.Tests/DocumentationSamples.cs#L98-L111' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_kafkainstrumentation_middleware' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/Kafka/Wolverine.Kafka.Tests/DocumentationSamples.cs#L178-L191' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_KafkaInstrumentation_middleware' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+## Connecting to Multiple Brokers <Badge type="tip" text="4.7" />
+
+Wolverine supports interacting with multiple Kafka brokers within one application like this:
+
+<!-- snippet: sample_using_multiple_kafka_brokers -->
+<a id='snippet-sample_using_multiple_kafka_brokers'></a>
+```cs
+using var host = await Host.CreateDefaultBuilder()
+    .UseWolverine(opts =>
+    {
+        opts.UseKafka("localhost:9092");
+        opts.AddNamedKafkaBroker(new BrokerName("americas"), "americas-kafka:9092");
+        opts.AddNamedKafkaBroker(new BrokerName("emea"), "emea-kafka:9092");
+
+        // Just publish all messages to Kafka topics
+        // based on the message type (or message attributes)
+        // This will get fancier in the near future
+        opts.PublishAllMessages().ToKafkaTopicsOnNamedBroker(new BrokerName("americas"));
+
+        // Or explicitly make subscription rules
+        opts.PublishMessage<ColorMessage>()
+            .ToKafkaTopicOnNamedBroker(new BrokerName("emea"), "colors");
+
+        // Listen to topics
+        opts.ListenToKafkaTopicOnNamedBroker(new BrokerName("americas"), "red");
+        // Other configuration
+    }).StartAsync();
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/Kafka/Wolverine.Kafka.Tests/DocumentationSamples.cs#L151-L174' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_multiple_kafka_brokers' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+Note that the `Uri` scheme within Wolverine for any endpoints from a "named" Kafka broker is the name that you supply
+for the broker. So in the example above, you might see `Uri` values for `emea://colors` or `americas://red`.
+
+## Disabling all Sending
+
+Hey, you might have an application that only consumes Kafka messages, but there are a *few* diagnostics in Wolverine that
+try to send messages. To completely eliminate that, you can disable all message sending in Wolverine like this:
+
+<!-- snippet: sample_disable_all_kafka_sending -->
+<a id='snippet-sample_disable_all_kafka_sending'></a>
+```cs
+using var host = await Host.CreateDefaultBuilder()
+    .UseWolverine(opts =>
+    {
+        opts
+            .UseKafka("localhost:9092")
+            
+            // Tell Wolverine that this application will never
+            // produce messages to turn off any diagnostics that might
+            // try to "ping" a topic and result in errors
+            .ConsumeOnly();
+        
+    }).StartAsync();
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/Kafka/Wolverine.Kafka.Tests/DocumentationSamples.cs#L131-L146' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_disable_all_kafka_sending' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->

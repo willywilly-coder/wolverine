@@ -1,3 +1,4 @@
+using JasperFx.Descriptors;
 using Weasel.Core.Migrations;
 using Wolverine.Persistence.Durability;
 using Wolverine.Runtime;
@@ -6,46 +7,47 @@ namespace Wolverine.RDBMS.MultiTenancy;
 
 public class MessageDatabaseDiscovery : IDatabaseSource
 {
-    private readonly IWolverineRuntime _runtime;
+    private readonly WolverineRuntime _runtime;
 
     public MessageDatabaseDiscovery(IWolverineRuntime runtime)
     {
-        _runtime = runtime;
+        // Yeah, I know, this is awful. But also working just fine
+        _runtime = (WolverineRuntime)runtime;
     }
 
-    public async ValueTask<IReadOnlyList<IDatabase>> BuildDatabases()
+    public async ValueTask<DatabaseUsage> DescribeDatabasesAsync(CancellationToken token)
     {
-        var list = new List<IMessageDatabase>();
-
-        if (_runtime.Storage is IMessageDatabase database)
-        {
-            list.Add(database);
-        }
-        else if (_runtime.Storage is MultiTenantedMessageStore tenants)
+        var usage = new DatabaseUsage { Cardinality = Cardinality };
+        
+        if (_runtime.Storage is MultiTenantedMessageStore tenants)
         {
             await tenants.InitializeAsync(_runtime);
-            list.AddRange(tenants.ActiveDatabases().OfType<IMessageDatabase>());
+
+            usage.MainDatabase = tenants.Main.Describe();
+
+            await tenants.Source.RefreshAsync();
+            
+            usage.Databases.AddRange(tenants.Source.AllActive().OfType<IMessageDatabase>().Select(x => x.Describe()));
+        }
+        else if (_runtime.Storage is IMessageDatabase md)
+        {
+            usage.MainDatabase = md.Describe();
+            usage.Cardinality = DatabaseCardinality.Single;
+        }
+        else
+        {
+            usage.Cardinality = DatabaseCardinality.None;
         }
 
-        foreach (var ancillaryStore in _runtime.AncillaryStores)
-        {
-            if (ancillaryStore is IMessageDatabase db)
-            {
-                list.Add(db);
-            }
-            else if (ancillaryStore is MultiTenantedMessageStore tenants)
-            {
-                await tenants.InitializeAsync(_runtime);
-                list.AddRange(tenants.ActiveDatabases().OfType<IMessageDatabase>());
-            }
-        }
+        usage.Cardinality = _runtime.Stores.Cardinality();
 
-        var groups = list.GroupBy(x => x.Uri);
-        return groups.Select(group =>
-        {
-            // It's important to use a "main" version because that has extra tables
-            var master = group.FirstOrDefault(x => x.IsMain);
-            return master ?? group.First();
-        }).OfType<IDatabase>().ToList();
+        return usage;
     }
+
+    public ValueTask<IReadOnlyList<IDatabase>> BuildDatabases()
+    {
+        return _runtime.Stores.FindAllAsync<IDatabase>();
+    }
+
+    public DatabaseCardinality Cardinality => _runtime.Stores.Cardinality();
 }

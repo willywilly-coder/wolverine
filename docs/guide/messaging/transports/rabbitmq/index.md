@@ -16,9 +16,10 @@ To use [RabbitMQ](http://www.rabbitmq.com/) as a transport with Wolverine, first
 return await Host.CreateDefaultBuilder(args)
     .UseWolverine(opts =>
     {
+        opts.ApplicationAssembly = typeof(Program).Assembly;
+
         // Listen for messages coming into the pongs queue
-        opts
-            .ListenToRabbitQueue("pongs");
+        opts.ListenToRabbitQueue("pongs");
 
         // Publish messages to the pings queue
         opts.PublishMessage<PingMessage>().ToRabbitExchange("pings");
@@ -40,7 +41,7 @@ return await Host.CreateDefaultBuilder(args)
         opts.Services.AddHostedService<PingerService>();
     }).RunJasperFxCommands(args);
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/PingPongWithRabbitMq/Pinger/Program.cs#L7-L36' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_bootstrapping_rabbitmq' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/PingPongWithRabbitMq/Pinger/Program.cs#L7-L37' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_bootstrapping_rabbitmq' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 See the [Rabbit MQ .NET Client documentation](https://www.com/dotnet-api-guide.html#connecting) for more information about configuring the `ConnectionFactory` to connect to Rabbit MQ.
@@ -79,7 +80,7 @@ using var host = await Host.CreateDefaultBuilder()
         });
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L100-L123' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_only_use_listener_connection_with_rabbitmq' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L101-L124' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_only_use_listener_connection_with_rabbitmq' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 To only send Rabbit MQ messages, but never receive them:
@@ -108,7 +109,7 @@ using var host = await Host.CreateDefaultBuilder()
         });
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L128-L151' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_only_use_sending_connection_with_rabbitmq' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L129-L152' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_only_use_sending_connection_with_rabbitmq' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ## Aspire Integration
@@ -154,11 +155,16 @@ using var host = await Host.CreateDefaultBuilder()
             .EnableWolverineControlQueues();
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L82-L95' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_rabbit_mq_control_queues' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L83-L96' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_rabbit_mq_control_queues' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
 ## Disable Rabbit MQ Reply Queues
+
+::: info
+The response queues (and system queues) are now created as durable Rabbit MQ queues with a TTL expiration of 30 minutes
+after there is no connection for these queues. 
+:::
 
 By default, Wolverine creates an in memory queue in the Rabbit MQ broker for each individual node that is used by Wolverine
 for request/reply invocations (`IMessageBus.InvokeAsync<T>()` when used remotely). Great, but if your process does not
@@ -190,7 +196,7 @@ using var host = await Host.CreateDefaultBuilder()
         });
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L53-L77' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_disable_rabbit_mq_system_queue' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Transports/RabbitMQ/Wolverine.RabbitMQ.Tests/Samples.cs#L54-L78' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_disable_rabbit_mq_system_queue' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Of course, doing so means that you will not be able to do request/reply through Rabbit MQ with your Wolverine application.

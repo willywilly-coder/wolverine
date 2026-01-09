@@ -1,5 +1,7 @@
 # Modular Monoliths
 
+@[youtube](JSnBe7n-CNI)
+
 ::: info
 Wolverine's mantra is "low code ceremony," and the modular monolith approach comes with a mountain of temptation
 for a certain kind of software architect to try out a world of potentially harmful high ceremony coding techniques.
@@ -83,6 +85,11 @@ builder.Services.AddMarten(opts =>
 
 builder.UseWolverine(opts =>
 {
+    // This helps Wolverine to use a unified envelope storage across all
+    // modules, which in turn should help Wolverine be more efficient with
+    // your database
+    opts.Durability.MessageStorageSchemaName = "wolverine";
+    
     // Tell Wolverine that when you have more than one handler for the same
     // message type, they should be executed separately and automatically
     // "stuck" to separate local queues
@@ -100,7 +107,7 @@ builder.UseWolverine(opts =>
     opts.Policies.AutoApplyTransactions();
 });
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/PersistenceTests/Samples/DocumentationSamples.cs#L234-L271' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_important_settings_for_modular_monoliths' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/PersistenceTests/Samples/DocumentationSamples.cs#L234-L276' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_important_settings_for_modular_monoliths' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 See [Message Identity](/guide/durability/#message-identity) and [Multiple Handlers for the Same Message Type](/guide/handlers/#multiple-handlers-for-the-same-message-type)
@@ -159,7 +166,7 @@ messaging, either locally in process or through external message brokers. Asynch
 decoupled, and often leads to much more resilient systems as your modules aren't "temporally" coupled and you utilize
 [retry or other error handling policies](/guide/handlers/error-handling) independently on downstream queues.
 
-You can communicate  do any mix of in process messaging and messaging through external messaging brokers like Rabbit MQ or Azure Service Bus.
+You can communicate with any mix of in process messaging and messaging through external messaging brokers like Rabbit MQ or Azure Service Bus.
 Let's start with just using local, in process queueing with Wolverine between your modules as shown below:
 
 ![Communicating through local queues](/modular-monolith-local-queues.png)
@@ -295,7 +302,7 @@ system shutdowns.
 
 ::: tip
 Look, MediatR is an almost dominant tool in the .NET ecosystem right now, but it doesn't come with any kind of built
-in transactional inbox/outbox support that you need to make asynchronous message passing be resilient. See [MediatR to Wolverine](/tutorials/from-mediatr)
+in transactional inbox/outbox support that you need to make asynchronous message passing be resilient. See [MediatR to Wolverine](/introduction/from-mediatr)
 for information about switching to Wolverine from MediatR.
 :::
 
@@ -418,8 +425,7 @@ through database scripts if you want to move a module into a separate service la
 if you use [Marten's separate document store](https://martendb.io/configuration/hostbuilder.html#working-with-multiple-marten-databases) feature. 
 
 Wolverine has [direct support for Marten's separate or "ancillary" stores](/guide/durability/marten/ancillary-stores) that still enables the usage of all Wolverine + Marten
-integrations. There is currently a limitation that there is only one physical database that shares the Wolverine message storage for
-the transactional inbox/outbox across all modules.
+integrations. 
 
 Also note that the Wolverine + Marten "Critter Stack" combination is a great fit for "Event Driven Architecture" approaches
 where you depend on reliably publishing event messages to interested listeners in your application -- which is essentially 
@@ -439,9 +445,11 @@ by using this setting:
 <a id='snippet-sample_using_message_storage_schema_name'></a>
 ```cs
 // THIS IS IMPORTANT FOR MODULAR MONOLITH USAGE!
+// This helps Wolverine out to always utilize the same envelope storage
+// for all modules for more efficient usage of resources
 opts.Durability.MessageStorageSchemaName = "wolverine";
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L59-L64' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_message_storage_schema_name' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L62-L69' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_message_storage_schema_name' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 By setting any value for `WolverineOptions.Durability.MessageStorageSchemaName`, Wolverine will use that value for the database schema

@@ -13,9 +13,6 @@ namespace Wolverine.Http.Transport;
 
 internal class HttpTransportExecutor
 {
-    public static readonly string EnvelopeContentType = "binary/wolverine-envelope";
-    public static readonly string EnvelopeBatchContentType = "binary/wolverine-envelopes";
-    
     private readonly WolverineRuntime _runtime;
     private readonly ILogger<HttpTransportExecutor> _logger;
 
@@ -29,7 +26,7 @@ internal class HttpTransportExecutor
     {
         if (httpContext.Request.Headers.TryGetValue("content-type", out var values))
         {
-            if (values[0] != EnvelopeBatchContentType)
+            if (values[0] != HttpTransport.EnvelopeBatchContentType)
             {
                 return Results.StatusCode(415);
             }
@@ -74,7 +71,7 @@ internal class HttpTransportExecutor
     {
         if (httpContext.Request.Headers.TryGetValue("content-type", out var values))
         {
-            if (values[0] != EnvelopeContentType)
+            if (values[0] != HttpTransport.EnvelopeContentType)
             {
                 return Results.StatusCode(415);
             }
@@ -89,15 +86,17 @@ internal class HttpTransportExecutor
         envelope.Destination = $"http://localhost{httpContext.Request.Path}".ToUri();
         envelope.DoNotCascadeResponse = true;
         envelope.Serializer = _runtime.Options.FindSerializer(envelope.ContentType);
-        
-        if (!_runtime.Pipeline.TryDeserializeEnvelope(envelope, out var continuation))
+
+        var deserializeResult = await _runtime.Pipeline.TryDeserializeEnvelope(envelope);
+
+        if (deserializeResult != NullContinuation.Instance)
         {
-            if (continuation is NoHandlerContinuation)
+            if (deserializeResult is NoHandlerContinuation)
             {
                 return Results.Problem($"No handler for the requested message type {envelope.MessageType}", statusCode:400);
             }
 
-            if (continuation is MoveToErrorQueue move)
+            if (deserializeResult is MoveToErrorQueue move)
             {
                 _logger.LogError(move.Exception, "Error executing message of type {MessageType}", envelope.MessageType);
                 return Results.Problem($"Execution error for requested message type {envelope.MessageType}",

@@ -1,3 +1,4 @@
+using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Expressions;
 using JasperFx.CodeGeneration.Frames;
@@ -13,6 +14,8 @@ namespace Wolverine.RavenDb.Internals;
 
 public class RavenDbPersistenceFrameProvider : IPersistenceFrameProvider
 {
+    public Frame[] DetermineFrameToNullOutMaybeSoftDeleted(Variable entity) => [];
+    
     public void ApplyTransactionSupport(IChain chain, IServiceContainer container)
     {
         if (!chain.Middleware.OfType<TransactionalFrame>().Any())

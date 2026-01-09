@@ -12,6 +12,7 @@ using Marten.Events.Aggregation;
 using Marten.Events.Projections;
 using Marten.Schema;
 using Marten.Storage;
+using MartenTests.AggregateHandlerWorkflow;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -34,12 +35,16 @@ public class end_to_end_publish_messages_through_marten_to_wolverine
         using var host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Durability.Mode = DurabilityMode.Solo;
+                
                 opts.Services.AddMarten(m =>
                     {
                         m.Connection(Servers.PostgresConnectionString);
                         m.DatabaseSchemaName = "wolverine_side_effects";
 
                         m.Projections.Add<Projection3>(ProjectionLifecycle.Async);
+
+                        m.DisableNpgsqlLogging = true;
                     })
                     .IntegrateWithWolverine()
                     .AddAsyncDaemon(DaemonMode.Solo);
@@ -76,6 +81,8 @@ public class end_to_end_publish_messages_through_marten_to_wolverine
             {
                 opts.Services.AddMarten(m =>
                     {
+                        m.DisableNpgsqlLogging = true;
+                        
                         m.Connection(Servers.PostgresConnectionString);
                         m.DatabaseSchemaName = "wolverine_side_effects";
 
@@ -86,6 +93,7 @@ public class end_to_end_publish_messages_through_marten_to_wolverine
                     .AddAsyncDaemon(DaemonMode.Solo);
 
                 opts.Policies.UseDurableLocalQueues();
+                opts.Durability.Mode = DurabilityMode.Solo;
             }).StartAsync();
 
         var streamId = Guid.NewGuid();
@@ -292,8 +300,12 @@ public class
         _host = await Host.CreateDefaultBuilder()
             .UseWolverine(opts =>
             {
+                opts.Durability.Mode = DurabilityMode.Solo;
+                
                 opts.Services.AddMarten(m =>
                 {
+                    m.DisableNpgsqlLogging = true;
+                    
                     m.Connection(Servers.PostgresConnectionString);
                     m.DatabaseSchemaName = "mixed_tenancy";
                     m.Schema.For<Customer>().SingleTenanted();

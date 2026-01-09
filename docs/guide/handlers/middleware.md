@@ -35,7 +35,7 @@ finally
     logger.LogInformation("Ran something in " + stopwatch.ElapsedMilliseconds);
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L20-L35' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_stopwatch_concept' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L21-L36' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_stopwatch_concept' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 You've got a couple different options, but the easiest by far is to use Wolverine's conventional middleware approach.
@@ -50,7 +50,7 @@ to HTTP endpoints, see [HTTP endpoint middleware](/guide/http/middleware).
 As an example middleware using Wolverine's conventional approach, here's the stopwatch functionality from above:
 
 <!-- snippet: sample_StopwatchMiddleware_1 -->
-<a id='snippet-sample_stopwatchmiddleware_1'></a>
+<a id='snippet-sample_StopwatchMiddleware_1'></a>
 ```cs
 public class StopwatchMiddleware
 {
@@ -69,7 +69,7 @@ public class StopwatchMiddleware
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L72-L91' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_stopwatchmiddleware_1' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L73-L92' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_StopwatchMiddleware_1' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 and that can be added to our application at bootstrapping time like this:
@@ -87,7 +87,7 @@ using var host = await Host.CreateDefaultBuilder()
                 chain.MessageType.IsInNamespace("MyApp.Messages.Important"));
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L138-L150' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_applying_middleware_by_policy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L139-L151' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_applying_middleware_by_policy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 And just for the sake of completeness, here's another version of the same functionality, but 
@@ -118,7 +118,7 @@ public static class StopwatchMiddleware2
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L108-L132' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_silly_micro_optimized_stopwatch_middleware' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L109-L133' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_silly_micro_optimized_stopwatch_middleware' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Alright, let's talk about what's happening in the code samples above:
@@ -155,7 +155,7 @@ finally
     middleware.Finally();
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L40-L53' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_demonstrating_middleware_application' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L41-L54' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_demonstrating_middleware_application' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Here's the rules for these conventional middleware classes:
@@ -174,7 +174,7 @@ Here's an example from the [custom middleware tutorial](/tutorials/middleware) t
 by the incoming message and aborts the message processing if it is not found:
 
 <!-- snippet: sample_AccountLookupMiddleware -->
-<a id='snippet-sample_accountlookupmiddleware'></a>
+<a id='snippet-sample_AccountLookupMiddleware'></a>
 ```cs
 // This is *a* way to build middleware in Wolverine by basically just
 // writing functions/methods. There's a naming convention that
@@ -207,7 +207,7 @@ public static class AccountLookupMiddleware
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/Middleware/AppWithMiddleware/Account.cs#L78-L111' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_accountlookupmiddleware' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/Middleware/AppWithMiddleware/Account.cs#L78-L111' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_AccountLookupMiddleware' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Notice that the middleware above uses a tuple as the return value so that it can both pass an `Account` entity to the inner handler and also
@@ -249,7 +249,7 @@ public static class MaybeBadThingHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Acceptance/compound_handlers.cs#L134-L155' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_sending_messages_in_before_middleware' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Acceptance/compound_handlers.cs#L163-L184' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_sending_messages_in_before_middleware' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Or by returning `OutgoingMessages` from a middleware method as shown below:
@@ -275,7 +275,7 @@ public static class MaybeBadThing2Handler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Acceptance/compound_handlers.cs#L157-L177' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_outgoing_messages_from_before_middleware' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Acceptance/compound_handlers.cs#L206-L226' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_outgoing_messages_from_before_middleware' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -285,14 +285,14 @@ public static class MaybeBadThing2Handler
 Let's say that some of our message types implement this interface:
 
 <!-- snippet: sample_IAccountCommand -->
-<a id='snippet-sample_iaccountcommand'></a>
+<a id='snippet-sample_IAccountCommand'></a>
 ```cs
 public interface IAccountCommand
 {
     Guid AccountId { get; }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/Middleware/AppWithMiddleware/Account.cs#L36-L43' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_iaccountcommand' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/Middleware/AppWithMiddleware/Account.cs#L36-L43' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IAccountCommand' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 We can apply the `AccountMiddleware` from the section above to only these message types by telling Wolverine to only apply this middleware 
@@ -350,7 +350,7 @@ public static class SomeHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L95-L106' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_apply_middleware_by_attribute' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L96-L107' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_apply_middleware_by_attribute' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Note that this attribute will accept multiple middleware types. Also note that the `[Middleware]` attribute can be placed either
@@ -364,7 +364,7 @@ For more advanced usage, you can drop down to the JasperFx.CodeGeneration `Frame
 The first step is to create a JasperFx.CodeGeneration `Frame` class that generates that code around the inner message or HTTP handler:
 
 <!-- snippet: sample_StopwatchFrame -->
-<a id='snippet-sample_stopwatchframe'></a>
+<a id='snippet-sample_StopwatchFrame'></a>
 ```cs
 public class StopwatchFrame : SyncFrame
 {
@@ -410,7 +410,7 @@ public class StopwatchFrame : SyncFrame
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L154-L200' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_stopwatchframe' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L155-L201' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_StopwatchFrame' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -420,7 +420,7 @@ To attach our `StopwatchFrame` as middleware to any route or message handler, we
 `ModifyChainAttribute` class as shown below:
 
 <!-- snippet: sample_StopwatchAttribute -->
-<a id='snippet-sample_stopwatchattribute'></a>
+<a id='snippet-sample_StopwatchAttribute'></a>
 ```cs
 public class StopwatchAttribute : ModifyChainAttribute
 {
@@ -430,7 +430,7 @@ public class StopwatchAttribute : ModifyChainAttribute
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L202-L212' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_stopwatchattribute' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L203-L213' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_StopwatchAttribute' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 This attribute can now be placed either on a specific HTTP route endpoint method or message handler method to **only** apply to
@@ -439,7 +439,7 @@ that specific action, or it can be placed on a `Handler` or `Endpoint` class to 
 Here's an example:
 
 <!-- snippet: sample_ClockedEndpoint -->
-<a id='snippet-sample_clockedendpoint'></a>
+<a id='snippet-sample_ClockedEndpoint'></a>
 ```cs
 public class ClockedEndpoint
 {
@@ -450,7 +450,7 @@ public class ClockedEndpoint
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L214-L225' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_clockedendpoint' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/Middleware.cs#L215-L226' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_ClockedEndpoint' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Now, when the application is bootstrapped, this is the code that would be generated to handle the "GET /clocked" route:
@@ -499,7 +499,7 @@ Again, please go easy with this feature and try not to shoot yourself in the foo
 You can register user-defined policies that apply to all chains or some subset of chains. For message handlers, implement this interface:
 
 <!-- snippet: sample_IHandlerPolicy -->
-<a id='snippet-sample_ihandlerpolicy'></a>
+<a id='snippet-sample_IHandlerPolicy'></a>
 ```cs
 /// <summary>
 ///     Use to apply your own conventions or policies to message handlers
@@ -515,13 +515,13 @@ public interface IHandlerPolicy : IWolverinePolicy
     void Apply(IReadOnlyList<HandlerChain> chains, GenerationRules rules, IServiceContainer container);
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Configuration/IHandlerPolicy.cs#L36-L52' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_ihandlerpolicy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Configuration/IHandlerPolicy.cs#L39-L55' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IHandlerPolicy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Here's a simple sample that registers middleware on each handler chain:
 
 <!-- snippet: sample_WrapWithSimple -->
-<a id='snippet-sample_wrapwithsimple'></a>
+<a id='snippet-sample_WrapWithSimple'></a>
 ```cs
 public class WrapWithSimple : IHandlerPolicy
 {
@@ -531,18 +531,18 @@ public class WrapWithSimple : IHandlerPolicy
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/BootstrappingSamples.cs#L59-L69' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_wrapwithsimple' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/BootstrappingSamples.cs#L60-L70' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_WrapWithSimple' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Then register your custom `IHandlerPolicy` with a Wolverine application like this:
 
 <!-- snippet: sample_AppWithHandlerPolicy -->
-<a id='snippet-sample_appwithhandlerpolicy'></a>
+<a id='snippet-sample_AppWithHandlerPolicy'></a>
 ```cs
 using var host = await Host.CreateDefaultBuilder()
     .UseWolverine(opts => { opts.Policies.Add<WrapWithSimple>(); }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/BootstrappingSamples.cs#L15-L20' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_appwithhandlerpolicy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/BootstrappingSamples.cs#L16-L21' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_AppWithHandlerPolicy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ## Using Configure(chain) Methods
@@ -577,7 +577,7 @@ public static void Configure(HandlerChain chain)
 Here's an example of this being used from Wolverine's test suite:
 
 <!-- snippet: sample_customized_handler_using_Configure -->
-<a id='snippet-sample_customized_handler_using_configure'></a>
+<a id='snippet-sample_customized_handler_using_Configure'></a>
 ```cs
 public class CustomizedHandler
 {
@@ -598,8 +598,46 @@ public class CustomizedHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Configuration/can_customize_handler_chain_through_Configure_call_on_HandlerType.cs#L25-L46' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_customized_handler_using_configure' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Configuration/can_customize_handler_chain_through_Configure_call_on_HandlerType.cs#L25-L46' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_customized_handler_using_Configure' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
+## Sending Messages from Middleware
 
+Wolverine 5.0 included some improvements to the usage of middleware *external* to the main handler or
+HTTP endpoint types to enable you to send messages through the usage of `OutgoingMessages` return types.
+
+You can now write middleware method like this:
+
+<!-- snippet: sample_send_messages_through_outgoing_messages_with_external_middleware -->
+<a id='snippet-sample_send_messages_through_outgoing_messages_with_external_middleware'></a>
+```cs
+public record MaybeBadThing4(int Number);
+
+public static class MaybeBadThing4Middleware
+{
+    public static (OutgoingMessages, HandlerContinuation) Validate(MaybeBadThing4 thing)
+    {
+        if (thing.Number > 10)
+        {
+            return ([new RejectYourThing(thing.Number)], HandlerContinuation.Stop);
+        }
+
+        return ([], HandlerContinuation.Continue);
+    }
+}
+
+[Middleware(typeof(MaybeBadThing4Middleware))]
+public static class MaybeBadThing4Handler
+{
+    public static void Handle(MaybeBadThing4 message)
+    {
+        Debug.WriteLine("Got " + message);
+    }
+}
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Acceptance/compound_handlers.cs#L256-L282' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_send_messages_through_outgoing_messages_with_external_middleware' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+And any objects in the `OutgoingMessages` return value from the middleware method will be sent as cascaded
+messages. Wolverine will also apply a "maybe stop" frame from the `IHandlerContinuation` as well.
 

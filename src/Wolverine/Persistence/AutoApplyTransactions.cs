@@ -1,8 +1,8 @@
+using JasperFx;
 using JasperFx.CodeGeneration;
 using Wolverine.Attributes;
 using Wolverine.Configuration;
 using Wolverine.Persistence.Sagas;
-using Wolverine.Runtime;
 
 namespace Wolverine.Persistence;
 
@@ -18,6 +18,11 @@ internal class AutoApplyTransactions : IChainPolicy
 
         foreach (var chain in chains.Where(x => !x.HasAttribute<TransactionalAttribute>()))
         {
+            if (Idempotency.HasValue)
+            {
+                chain.Idempotency = Idempotency.Value;
+            }
+            
             chain.ApplyImpliedMiddlewareFromHandlers(rules);
             var potentials = providers.Where(x => x.CanApply(chain, container)).ToArray();
             if (potentials.Length == 1)
@@ -26,4 +31,6 @@ internal class AutoApplyTransactions : IChainPolicy
             }
         }
     }
+
+    public IdempotencyStyle? Idempotency { get; set; }
 }

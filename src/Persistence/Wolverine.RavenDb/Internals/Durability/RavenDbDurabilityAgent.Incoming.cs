@@ -15,20 +15,21 @@ public partial class RavenDbDurabilityAgent
             using var session = _store.OpenAsyncSession();
             var listeners = await session.Query<IncomingMessage>()
                 .Where(x => x.OwnerId == 0)
-                .Select(x => x.ReceivedAt)
+                .Select(x => new { x.ReceivedAt })
                 .Distinct()
                 .ToListAsync();
 
-            foreach (var listener in listeners)
+            foreach (var listener in listeners.Where(x => x.ReceivedAt != null))
             {
-                var circuit = _runtime.Endpoints.FindListenerCircuit(listener);
+                var receivedAt = listener.ReceivedAt!;
+                var circuit = _runtime.Endpoints.FindListenerCircuit(receivedAt);
                 if (circuit.Status != ListeningStatus.Accepting)
                 {
                     continue;
                 }
 
                 // Harden around this!
-                await recoverMessagesForListener(listener, circuit);
+                await recoverMessagesForListener(receivedAt, circuit);
             }
         }
         catch (Exception e)
@@ -44,7 +45,7 @@ public partial class RavenDbDurabilityAgent
             var envelopes = await _parent.LoadPageOfGloballyOwnedIncomingAsync(listener, _settings.RecoveryBatchSize);
             await _parent.ReassignIncomingAsync(_settings.AssignedNodeNumber, envelopes);
 
-            circuit.EnqueueDirectly(envelopes);
+            await circuit.EnqueueDirectlyAsync(envelopes);
             _logger.RecoveredIncoming(envelopes);
 
             _logger.LogInformation("Successfully recovered {Count} messages from the inbox for listener {Listener}",
@@ -55,5 +56,5 @@ public partial class RavenDbDurabilityAgent
             _logger.LogError(e, "Error trying to recover messages from the inbox for listener {Uri}", listener);
         }
     }
-    
+
 }

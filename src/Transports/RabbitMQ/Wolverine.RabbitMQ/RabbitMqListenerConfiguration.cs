@@ -55,7 +55,7 @@ public sealed class RabbitMqConventionalListenerConfiguration : RabbitMqListener
     }
 }
 
-public class RabbitMqListenerConfiguration : ListenerConfiguration<RabbitMqListenerConfiguration, RabbitMqQueue>
+public class RabbitMqListenerConfiguration : InteroperableListenerConfiguration<RabbitMqListenerConfiguration, RabbitMqQueue, IRabbitMqEnvelopeMapper, RabbitMqEnvelopeMapper>
 {
     protected readonly RabbitMqQueue Queue;
     protected readonly RabbitMqTransport Transport;
@@ -179,7 +179,7 @@ public class RabbitMqListenerConfiguration : ListenerConfiguration<RabbitMqListe
     {
         add(e =>
         {
-            e.DeadLetterQueue = dlq;
+            e.DeadLetterQueue = dlq.Clone();
         });
 
         return this;
@@ -194,6 +194,21 @@ public class RabbitMqListenerConfiguration : ListenerConfiguration<RabbitMqListe
         add(e =>
         {
             e.DeadLetterQueue = null;
+        });
+
+        return this;
+    }
+
+    /// <summary>
+    /// Override the default listener id for this endpoint. This is useful in case of fanout scenarios where multiple consumers are listening to the same queue like with RMQ streams
+    /// </summary>
+    /// <param name="customListenerId"></param>
+    /// <returns></returns>
+    public RabbitMqListenerConfiguration WithCustomListenerId(string? customListenerId = null)
+    {
+        add(e =>
+        {
+            e.CustomListenerId = customListenerId ?? Guid.NewGuid().ToString();
         });
 
         return this;

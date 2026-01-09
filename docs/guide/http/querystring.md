@@ -69,7 +69,7 @@ public async Task use_decimal_querystring_hit()
     body.ReadAsText().ShouldBe("Amount is 42.1");
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http.Tests/using_querystring_parameters.cs#L449-L488' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_query_string_usage' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http.Tests/using_querystring_parameters.cs#L450-L489' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_query_string_usage' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -81,7 +81,7 @@ it would be convenient to have Wolverine just let you declare a single .NET type
 will be filled with any of the matching query string parameters like this sample:
 
 <!-- snippet: sample_using_[FromQuery]_binding -->
-<a id='snippet-sample_using_[fromquery]_binding'></a>
+<a id='snippet-sample_using_[FromQuery]_binding'></a>
 ```cs
 // If you want every value to be optional, use public, settable
 // properties and a no-arg public constructor
@@ -120,7 +120,7 @@ public static class QueryOrdersEndpoint
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Marten/Orders.cs#L309-L349' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_[fromquery]_binding' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Marten/Orders.cs#L340-L380' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_[FromQuery]_binding' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Because we've used the `[FromQuery]` attribute on a parameter argument that's not a simple type, Wolverine is trying to bind

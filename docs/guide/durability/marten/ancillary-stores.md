@@ -26,7 +26,7 @@ public interface IPlayerStore : IDocumentStore;
 
 public interface IThingStore : IDocumentStore;
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L255-L261' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_separate_marten_stores' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L270-L276' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_separate_marten_stores' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 We can add Wolverine integration to both through a similar call to `IntegrateWithWolverine()` as normal as shown below:
@@ -39,6 +39,8 @@ theHost = await Host.CreateDefaultBuilder()
     {
 
         // THIS IS IMPORTANT FOR MODULAR MONOLITH USAGE!
+        // This helps Wolverine out to always utilize the same envelope storage
+        // for all modules for more efficient usage of resources
         opts.Durability.MessageStorageSchemaName = "wolverine";
 
         opts.Services.AddMarten(Servers.PostgresConnectionString).IntegrateWithWolverine();
@@ -69,12 +71,15 @@ theHost = await Host.CreateDefaultBuilder()
                 tenancy.AddSingleTenantDatabase(tenant3ConnectionString, "tenant3");
             });
             m.DatabaseSchemaName = "things";
-        }).IntegrateWithWolverine(masterDatabaseConnectionString: Servers.PostgresConnectionString);
+        }).IntegrateWithWolverine(x =>
+        {
+            x.MainConnectionString = Servers.PostgresConnectionString;
+        });
 
         opts.Services.AddResourceSetupOnStartup();
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L55-L100' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_bootstrapping_with_ancillary_marten_stores' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L57-L107' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_bootstrapping_with_ancillary_marten_stores' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Let's specifically zoom in on this code from within the big sample above:
@@ -83,9 +88,11 @@ Let's specifically zoom in on this code from within the big sample above:
 <a id='snippet-sample_using_message_storage_schema_name'></a>
 ```cs
 // THIS IS IMPORTANT FOR MODULAR MONOLITH USAGE!
+// This helps Wolverine out to always utilize the same envelope storage
+// for all modules for more efficient usage of resources
 opts.Durability.MessageStorageSchemaName = "wolverine";
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L60-L65' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_message_storage_schema_name' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L62-L69' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_message_storage_schema_name' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 If you are using separate Marten document stores for different modules in your application, you can easily make Wolverine 
@@ -98,7 +105,7 @@ Now, moving to message handlers or HTTP endpoints, you will have to explicitly t
 individual messages with the `[MartenStore(store type)]` attribute like this simple example below:
 
 <!-- snippet: sample_PlayerMessageHandler -->
-<a id='snippet-sample_playermessagehandler'></a>
+<a id='snippet-sample_PlayerMessageHandler'></a>
 ```cs
 // This will use a Marten session from the
 // IPlayerStore rather than the main IDocumentStore
@@ -112,7 +119,7 @@ public static class PlayerMessageHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L239-L253' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_playermessagehandler' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/AncillaryStores/bootstrapping_ancillary_marten_stores_with_wolverine.cs#L254-L268' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_PlayerMessageHandler' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ::: info
@@ -128,6 +135,8 @@ So what's possible so far?
 * Marten side effects
 * Subscriptions to Marten events
 * Multi-tenancy, both "conjoined" Marten multi-tenancy and multi-tenancy through separate databases
+* [Wolverine managed projection or subscription distribution](/guide/durability/marten/distribution)
+* * The ["Event Forwarding"](/guide/durability/marten/event-forwarding) from Marten to Wolverine, but that is either 100% enabled for all Marten stores through the main Marten store registration or not at all
 
 ::: tip
 In the case of the ancillary Marten stores, the `IDocumentSession` objects are "lightweight" sessions without
@@ -136,19 +145,10 @@ any identity map mechanics for better performance.
 
 ## What's not (yet) supported
 
-::: warning
-There is currently a limitation where Wolverine can only use the inbox/outbox storage from the main Marten
-document store even if your handler declares that it is from a separate store. This is perfectly fine if your
-ancillary stores target the same PostgreSQL database. This limitation will be removed in 3.0.
-:::
-
 * It is not possible to use more than one ancillary store in the same handler with the middleware
-* The "Event Forwarding" from Marten to Wolverine
 * Fine grained configuration of the `IDocumentSession` objects created for the ancillary stores, so no ability to tag
   custom `IDocumentSessionListener` objects or control the session type. Listeners could be added through Wolverine middlware
   though
-* Controlling which schema the Wolverine envelope tables are placed in. Today they will be placed in the default schema for
-  the ancillary store
 * The PostgreSQL messaging transport will not span the ancillary databases, but will still work if the ancillary store is targeting
   the same database
 

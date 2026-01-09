@@ -2,11 +2,14 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
+using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
+using JasperFx.CodeGeneration.Services;
 using JasperFx.Core;
 using JasperFx.Core.Reflection;
+using JasperFx.Descriptors;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -14,18 +17,18 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.FSharp.Core;
-using Wolverine.Codegen;
 using Wolverine.Configuration;
 using Wolverine.Http.CodeGen;
 using Wolverine.Http.Metadata;
 using Wolverine.Http.Policies;
+using Wolverine.Persistence;
 using Wolverine.Runtime;
-using ServiceContainer = Wolverine.Runtime.ServiceContainer;
+using Wolverine.Runtime.Partitioning;
+using ServiceContainer = JasperFx.ServiceContainer;
 
 namespace Wolverine.Http;
 
-public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICodeFile, IEndpointNameMetadata, IEndpointSummaryMetadata, IEndpointDescriptionMetadata
+public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICodeFile, IEndpointNameMetadata, IEndpointSummaryMetadata, IEndpointDescriptionMetadata, IDescribeMyself
 {
     public static bool IsValidResponseType(Type type)
     {
@@ -69,6 +72,7 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
     /// This may be overridden by some IResponseAware policies in place of the first
     /// create variable of the method call
     /// </summary>
+    [IgnoreDescription]
     public Variable? ResourceVariable { get; set; }
 
     // Make the assumption that the route argument has to match the parameter name
@@ -157,14 +161,19 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
 
     public bool NoContent { get; }
 
+    [IgnoreDescription]
     public MethodCall Method { get; }
+
+    public Type EndpointType => Method.HandlerType;
 
     public string? RouteName { get; set; }
 
+    [IgnoreDescription]
     public string? DisplayName { get; set; }
     
     public int Order { get; set; }
 
+    [IgnoreDescription]
     public IEnumerable<string> HttpMethods => _httpMethods;
 
     public Type? ResourceType { get; private set; }
@@ -194,6 +203,7 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
         RequestType ??= typeof(void);
     }
 
+    [IgnoreDescription]
     public RoutePattern? RoutePattern { get; private set; }
 
     public Type? RequestType
@@ -253,7 +263,23 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
 
     public bool HasResourceType()
     {
-        return ResourceType != null && ResourceType != typeof(void) && ResourceType != typeof(Unit);
+        return ResourceType != null && ResourceType != typeof(void) && ResourceType.FullName != "Microsoft.FSharp.Core.Unit";
+    }
+
+    public override bool TryInferMessageIdentity(out PropertyInfo? property)
+    {
+        var atts = Method.HandlerType.GetCustomAttributes()
+            .Concat(Method.Method.GetCustomAttributes())
+            .Concat(Method.Method.GetParameters().SelectMany(x => x.GetCustomAttributes()))
+            .OfType<IMayInferMessageIdentity>().ToArray();
+
+        foreach (var att in atts)
+        {
+            if (att.TryInferMessageIdentity(this, out property)) return true;
+        }
+        
+        property = default;
+        return false;
     }
 
     public override bool ShouldFlushOutgoingMessages()
@@ -273,7 +299,7 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
 
     public override Type? InputType()
     {
-        return HasRequestType ? RequestType : null;
+        return HasRequestType ? RequestType : ComplexQueryStringType;
     }
 
     public override Frame[] AddStopConditionIfNull(Variable variable)
@@ -281,9 +307,49 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
         return [new SetStatusCodeAndReturnIfEntityIsNullFrame(variable)];
     }
 
+    public override Frame[] AddStopConditionIfNull(Variable data, Variable? identity, IDataRequirement requirement)
+    {
+        var message = requirement.MissingMessage ?? $"Unknown {data.VariableType.NameInCode()} with identity {{Id}}";
+        
+        // TODO -- want to use WolverineOptions here for a default
+        switch (requirement.OnMissing)
+        {
+            case OnMissing.Simple404:
+                Metadata.Produces(404);
+                return [new SetStatusCodeAndReturnIfEntityIsNullFrame(data)];
+                
+            case OnMissing.ProblemDetailsWith400:
+                Metadata.Produces(400, contentType: "application/problem+json");
+                return [new WriteProblemDetailsIfNull(data, identity, message, 400)];
+            case OnMissing.ProblemDetailsWith404:
+                Metadata.Produces(404, contentType: "application/problem+json");
+                return [new WriteProblemDetailsIfNull(data, identity, message, 404)];
+                
+            default:
+                return [new ThrowRequiredDataMissingExceptionFrame(data, identity, message)];
+        }
+    }
+
     public override string ToString()
     {
         return _fileName!;
+    }
+
+    public OptionsDescription ToDescription()
+    {
+        var description = new OptionsDescription(this);
+        description.AddValue(nameof(HttpMethods), HttpMethods.ToArray());
+
+        description.AddValue("Route", RoutePattern.RawText);
+
+        if (Tags.Any())
+        {
+            description.AddValue("Tags", Tags.Select(pair => $"{pair.Key} = {pair.Value}").Join(", "));
+        }
+
+        description.AddValue("Endpoint", $"{Method.HandlerType.FullNameInCode()}.{Method.MethodSignature}");
+
+        return description;
     }
 
     public override bool RequiresOutbox()
@@ -343,13 +409,11 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
             if (parameterType == typeof(string))
             {
                 variable = new ReadHttpFrame(BindingSource.Form, parameterType,key).Variable;
-                variable.Name = key;
                 _formValueVariables.Add(variable);
             }
             if (parameterType == typeof(string[]))
             {
                 variable = new ParsedArrayFormValue(parameterType, parameterName).Variable;
-                variable.Name = key;
                 _formValueVariables.Add(variable);
             }
 
@@ -393,6 +457,23 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
 
         return variable;
     }
+ 
+    public bool FindQuerystringVariable(Type variableType, string routeOrParameterName, [NotNullWhen(true)]out Variable? variable)
+    {
+        var matched = Method.Method.GetParameters()
+            .FirstOrDefault(x => x.ParameterType == variableType && x.Name != null && x.Name.EqualsIgnoreCase(routeOrParameterName));
+        if (matched is not null)
+        {
+            variable = TryFindOrCreateQuerystringValue(matched);
+            if (variable is not null)
+            {
+                return true;
+            }
+        }
+
+        variable = null;
+        return false;
+    }
 
     public HttpElementVariable? TryFindOrCreateQuerystringValue(ParameterInfo parameter)
     {
@@ -418,6 +499,12 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
             {
                 variable = new ReadHttpFrame(BindingSource.QueryString, parameterType, key).Variable;
                 variable.Name = key;
+
+                if (variable.Usage == "tenantId")
+                {
+                    variable.OverrideName("tenantIdString");
+                }
+                
                 _querystringVariables.Add(variable);
             }
 
@@ -594,9 +681,35 @@ public partial class HttpChain : Chain<HttpChain, ModifyHttpChainAttribute>, ICo
     public bool HasRequestType => RequestType != null && RequestType != typeof(void);
 
     public bool IsFormData { get; internal set; }
+    public Type? ComplexQueryStringType { get; set; }
+    public ServiceProviderSource ServiceProviderSource { get; set; } = ServiceProviderSource.IsolatedAndScoped;
 
     internal Variable BuildJsonDeserializationVariable()
     {
         return _parent.BuildJsonDeserializationVariable(this);
     }
+
+    public override void ApplyParameterMatching(MethodCall call)
+    {
+        _parent.ApplyParameterMatching(this, call);
+    }
+
+    public override IdempotencyStyle Idempotency
+    {
+        get => IdempotencyStyle.None;
+        set
+        {
+            // Nothing, you can't actually override it
+        }
+    }
+
+    public bool TryReplaceServiceProvider(out Variable serviceProvider)
+    {
+        serviceProvider = default!;
+        if (ServiceProviderSource == ServiceProviderSource.IsolatedAndScoped) return false;
+
+        serviceProvider = new Variable(typeof(IServiceProvider), $"httpContext.{nameof(HttpContext.RequestServices)}");
+        return true;
+    }
 }
+

@@ -19,6 +19,8 @@ internal class SqsSenderProtocol :ISenderProtocol
         _queue = queue;
         _sqs = sqs;
         _logger = runtime.LoggerFactory.CreateLogger<SqsSenderProtocol>();
+
+        _queue.Mapper ??= _queue.BuildMapper(runtime);
     }
 
     public async Task SendBatchAsync(ISenderCallback callback, OutgoingMessageBatch batch)
@@ -81,7 +83,7 @@ internal class OutgoingSqsBatch
     public async Task ProcessSuccessAsync(ISenderCallback callback, SendMessageBatchResponse response,
         OutgoingMessageBatch batch)
     {
-        if (!response.Failed.Any())
+        if (response.Failed == null || !response.Failed.Any())
         {
             await callback.MarkSuccessfulAsync(batch);
         }

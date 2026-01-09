@@ -64,9 +64,9 @@ public class TenantedDbContextBuilderByConnectionString<T> : IDbContextBuilder<T
         _configuration(builder, new ConnectionString(connectionString), new TenantId(messaging.TenantId));
         var dbContext = _constructor(builder.Options);
 
-        var transaction = new MappedEnvelopeTransaction(dbContext, messaging);
-        // ReSharper disable once MethodHasAsyncOverload
-        messaging.EnlistInOutbox(transaction);
+        var transaction = new EfCoreEnvelopeTransaction(dbContext, messaging);
+
+        await messaging.EnlistInOutboxAsync(transaction);
 
         return dbContext;
     }

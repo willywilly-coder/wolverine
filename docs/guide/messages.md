@@ -12,14 +12,14 @@ to the proper handler that can handle that message. Here's some facts about mess
 
 The default serialization option is [System.Text.Json](https://learn.microsoft.com/en-us/dotnet/api/system.text.json?view=net-8.0), as this is now mature, seems to work with just about anything now, and sets you up
 for relatively easy integration with a range of external non-Wolverine applications. You also have the option to fall back
-to Newtonsoft.JSON or to use higher performance [MemoryPack](/guide/messages.html#memorypack-serialization) or [MessagePack](/guide/messages.html#messagepack-serialization) integrations with Wolverine.
+to Newtonsoft.JSON or to use higher performance [MemoryPack](/guide/messages.html#memorypack-serialization) or [MessagePack](/guide/messages.html#messagepack-serialization) or [Protobuf](/guide/messages.html#protobuf-serialization) integrations with Wolverine.
 
 ## Message Type Name or Alias
 
 Let's say that you have a basic message structure like this:
 
 <!-- snippet: sample_PersonBorn1 -->
-<a id='snippet-sample_personborn1'></a>
+<a id='snippet-sample_PersonBorn1'></a>
 ```cs
 public class PersonBorn
 {
@@ -33,7 +33,7 @@ public class PersonBorn
     public int Year { get; set; }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L13-L27' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_personborn1' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L13-L27' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_PersonBorn1' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 By default, Wolverine will identify this type by just using the .NET full name like so:
@@ -100,9 +100,9 @@ types that will be published by the application by either implementing one of th
 ```cs
 public record CreateIssue(string Name) : IMessage;
 
-public record DeleteIssue(Guid Id) : ICommand;
+public record DeleteIssue(Guid Id) : IMessage;
 
-public record IssueCreated(Guid Id, string Name) : IEvent;
+public record IssueCreated(Guid Id, string Name) : IMessage;
 ```
 <sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageDiscovery.cs#L6-L14' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_message_type_discovery' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
@@ -114,12 +114,12 @@ The marker types shown above may be helpful in transitioning an existing codebas
 You can optionally use an attribute to mark a type as a message:
 
 <!-- snippet: sample_using_WolverineMessage_attribute -->
-<a id='snippet-sample_using_wolverinemessage_attribute'></a>
+<a id='snippet-sample_using_WolverineMessage_attribute'></a>
 ```cs
 [WolverineMessage]
 public record CloseIssue(Guid Id);
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageDiscovery.cs#L16-L21' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_wolverinemessage_attribute' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageDiscovery.cs#L16-L21' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_WolverineMessage_attribute' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Or lastly, make up your own criteria to find and mark message types within your system as shown below:
@@ -143,7 +143,7 @@ Going back to the original `PersonBorn` message class in previous sections, let'
 create a new version of that message that is no longer structurally equivalent to the original message:
 
 <!-- snippet: sample_PersonBorn_V2 -->
-<a id='snippet-sample_personborn_v2'></a>
+<a id='snippet-sample_PersonBorn_V2'></a>
 ```cs
 [MessageIdentity("person-born", Version = 2)]
 public class PersonBornV2
@@ -153,10 +153,10 @@ public class PersonBornV2
     public DateTime Birthday { get; set; }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L78-L88' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_personborn_v2' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L78-L88' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_PersonBorn_V2' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
-The `[Version("V2")]` attribute usage tells Wolverine that this class is "V2" for the `message-type` = "person-born."
+The `[MessageIdentity("person-born", Version = 2)]` attribute usage tells Wolverine that this class is "Version 2" for the `message-type` = "person-born."
 
 Wolverine will now accept or publish this message using the built in Json serialization with the content type of `application/vnd.person-born.v2+json`.
 Any custom serializers should follow some kind of naming convention for content types that identify versioned representations.
@@ -176,14 +176,14 @@ And to instead opt into using System.Text.Json with different defaults -- which 
 increased risk of serialization failures -- use this syntax where `opts` is a `WolverineOptions` object:
 
 <!-- snippet: sample_opting_into_STJ -->
-<a id='snippet-sample_opting_into_stj'></a>
+<a id='snippet-sample_opting_into_STJ'></a>
 ```cs
 opts.UseSystemTextJsonForSerialization(stj =>
 {
     stj.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
 });
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Transports/Local/local_integration_specs.cs#L26-L33' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_opting_into_stj' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Testing/CoreTests/Transports/Local/local_integration_specs.cs#L26-L33' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_opting_into_STJ' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 When using Newtonsoft.Json, the default configuration is:
@@ -197,13 +197,13 @@ return new JsonSerializerSettings
     PreserveReferencesHandling = PreserveReferencesHandling.Objects
 };
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Serialization/NewtonsoftSerializer.cs#L129-L137' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_default_newtonsoft_settings' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Wolverine/Runtime/Serialization/NewtonsoftSerializer.cs#L146-L154' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_default_newtonsoft_settings' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 To customize the Newtonsoft.Json serialization, use this option:
 
 <!-- snippet: sample_CustomizingJsonSerialization -->
-<a id='snippet-sample_customizingjsonserialization'></a>
+<a id='snippet-sample_CustomizingJsonSerialization'></a>
 ```cs
 using var host = await Host.CreateDefaultBuilder()
     .UseWolverine(opts =>
@@ -214,7 +214,7 @@ using var host = await Host.CreateDefaultBuilder()
         });
     }).StartAsync();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L161-L172' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_customizingjsonserialization' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L161-L172' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_CustomizingJsonSerialization' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ### MessagePack Serialization
@@ -295,7 +295,44 @@ using var host = await Host.CreateDefaultBuilder()
 <sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Extensions/Wolverine.MemoryPack.Tests/Samples.cs#L24-L39' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_memorypack_on_selected_endpoints' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
+### Protobuf Serialization
 
+Wolverine supports Google's data interchange format [Protobuf](https://github.com/protocolbuffers/protobuf) through the `WolverineFx.Protobuf` Nuget package.
+To enable Protobuf serialization through the entire application, use:
+
+<!-- snippet: sample_using_protobuf_for_the_default_for_the_app -->
+<a id='snippet-sample_using_protobuf_for_the_default_for_the_app'></a>
+```cs
+using var host = await Host.CreateDefaultBuilder()
+    .UseWolverine(opts =>
+    {
+        // Make Protobuf the default serializer throughout this application
+        opts.UseProtobufSerialization();
+    }).StartAsync();
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Extensions/Wolverine.Protobuf.Tests/Samples.cs#L10-L19' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_protobuf_for_the_default_for_the_app' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+Likewise, you can use Protobuf on selected endpoints like this:
+
+<!-- snippet: sample_using_protobuf_on_selected_endpoints -->
+<a id='snippet-sample_using_protobuf_on_selected_endpoints'></a>
+```cs
+using var host = await Host.CreateDefaultBuilder()
+    .UseWolverine(opts =>
+    {
+        // Use Protobuf on a local queue
+        opts.LocalQueue("one").UseProtobufSerialization();
+
+        // Use Protobuf on a listening endpoint
+        opts.ListenAtPort(2223).UseProtobufSerialization();
+
+        // Use Protobuf on one subscriber
+        opts.PublishAllMessages().ToPort(2222).UseProtobufSerialization();
+    }).StartAsync();
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Extensions/Wolverine.Protobuf.Tests/Samples.cs#L24-L39' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_protobuf_on_selected_endpoints' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
 
 
 
@@ -305,7 +342,7 @@ using var host = await Host.CreateDefaultBuilder()
 If you make breaking changes to an incoming message in a later version, you can simply handle both versions of that message separately:
 
 <!-- snippet: sample_PersonCreatedHandler -->
-<a id='snippet-sample_personcreatedhandler'></a>
+<a id='snippet-sample_PersonCreatedHandler'></a>
 ```cs
 public class PersonCreatedHandler
 {
@@ -320,14 +357,14 @@ public class PersonCreatedHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L113-L128' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_personcreatedhandler' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L113-L128' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_PersonCreatedHandler' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Or you could use a custom `IMessageDeserializer` to read incoming messages from V1 into the new V2 message type, or you can take advantage of message forwarding
 so you only need to handle one message type using the `IForwardsTo<T>` interface as shown below:
 
 <!-- snippet: sample_IForwardsTo_PersonBornV2 -->
-<a id='snippet-sample_iforwardsto_personbornv2'></a>
+<a id='snippet-sample_IForwardsTo_PersonBornV2'></a>
 ```cs
 public class PersonBorn : IForwardsTo<PersonBornV2>
 {
@@ -348,13 +385,13 @@ public class PersonBorn : IForwardsTo<PersonBornV2>
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L90-L111' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_iforwardsto_personbornv2' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L90-L111' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IForwardsTo_PersonBornV2' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Which forwards to the current message type:
 
 <!-- snippet: sample_PersonBorn_V2 -->
-<a id='snippet-sample_personborn_v2'></a>
+<a id='snippet-sample_PersonBorn_V2'></a>
 ```cs
 [MessageIdentity("person-born", Version = 2)]
 public class PersonBornV2
@@ -364,7 +401,7 @@ public class PersonBornV2
     public DateTime Birthday { get; set; }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L78-L88' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_personborn_v2' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Samples/DocumentationSamples/MessageVersioning.cs#L78-L88' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_PersonBorn_V2' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Using this strategy, other systems could still send your system the original `application/vnd.person-born.v1+json` formatted

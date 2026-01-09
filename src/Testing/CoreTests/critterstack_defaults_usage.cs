@@ -32,6 +32,41 @@ public class critterstack_defaults_usage
     }
 
     [Fact]
+    public async Task set_the_application_assembly()
+    {
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+                opts.Services.CritterStackDefaults(x =>
+                {
+                    x.Development.SourceCodeWritingEnabled = true;
+                    x.Development.ResourceAutoCreate = AutoCreate.CreateOrUpdate;
+                    x.Development.GeneratedCodeMode = TypeLoadMode.Auto;
+
+                    x.ApplicationAssembly = typeof(IInterfaceMessage).Assembly;
+                });
+            })
+            .UseEnvironment("Development")
+            .StartAsync();
+        
+        host.GetRuntime().Options.ApplicationAssembly.ShouldBe(typeof(IInterfaceMessage).Assembly);
+    }
+
+    [Fact]
+    public async Task use_the_default_application_assembly()
+    {
+        using var host = await Host.CreateDefaultBuilder()
+            .UseWolverine(opts =>
+            {
+
+            })
+            .UseEnvironment("Development")
+            .StartAsync();
+        
+        host.GetRuntime().Options.ApplicationAssembly.ShouldBe(GetType().Assembly);
+    }
+
+    [Fact]
     public async Task running_in_production_mode_1()
     {
         using var host = await Host.CreateDefaultBuilder()

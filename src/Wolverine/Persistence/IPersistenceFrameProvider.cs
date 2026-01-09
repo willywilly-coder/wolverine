@@ -1,4 +1,5 @@
-﻿using JasperFx.CodeGeneration.Frames;
+﻿using JasperFx;
+using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
 using Wolverine.Configuration;
 using Wolverine.Persistence.Sagas;
@@ -47,6 +48,8 @@ public interface IPersistenceFrameProvider
     Frame DetermineDeleteFrame(Variable variable, IServiceContainer container);
 
     Frame DetermineStorageActionFrame(Type entityType, Variable action, IServiceContainer container);
+
+    Frame[] DetermineFrameToNullOutMaybeSoftDeleted(Variable entity);
 }
 
 

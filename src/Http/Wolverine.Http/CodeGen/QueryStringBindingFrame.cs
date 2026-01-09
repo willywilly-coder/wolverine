@@ -1,4 +1,5 @@
 using System.Reflection;
+using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
@@ -27,8 +28,9 @@ internal class FromQueryAttributeUsage : IParameterStrategy
         if (parameter.ParameterType.IsTypeOrNullableOf<TimeOnly>()) return false;
         if (parameter.ParameterType.IsTypeOrNullableOf<TimeSpan>()) return false;
         if (parameter.ParameterType.IsTypeOrNullableOf<Guid>()) return false;
-        
-        chain.RequestType = parameter.ParameterType;
+
+        chain.ComplexQueryStringType = parameter.ParameterType;
+
         variable = new QueryStringBindingFrame(parameter.ParameterType, chain).Variable;
         return true;
     }

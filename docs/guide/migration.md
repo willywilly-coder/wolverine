@@ -1,5 +1,53 @@
 # Migration Guide
 
+## Key Changes in 5.0
+
+5.0 had very few breaking changes in the public API, but some in "publinternals" types most users would never touch. The
+biggest change in the internals is the replacement of the venerable [TPL DataFlow library](https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/dataflow-task-parallel-library) 
+with the [System.Threading.Channels library](https://learn.microsoft.com/en-us/dotnet/core/extensions/channels)
+in every place that Wolverine uses in memory queueing. The only change this caused to the public API was the removal of
+the option for direct configuration of the TPL DataFlow `ExecutionOptions`. Endpoint ordering and parallelization options
+are unchanged otherwise in the public fluent interface for configuration. 
+
+The `IntegrateWithWolverine()` syntax for ["ancillary stores"](/guide/durability/marten/ancillary-stores) changed to a [nested closure](https://martinfowler.com/dslCatalog/nestedClosure.html) syntax to be more consistent
+with the syntax for the main [Marten](https://martendb.io) store. The [Wolverine managed distribution of Marten projections and subscriptions](/guide/durability/marten/distribution)
+now applies to the ancillary stores as well. 
+
+The new [Partitioned Sequential Messaging](/guide/messaging/partitioning) feature is a potentially huge step forward for
+building a Wolverine system that can efficiently and resiliently handle concurrent access to sensitive resources.
+
+The [Aggregate Handler Workflow](/guide/durability/marten/event-sourcing) feature with Marten now supports strong typed identifiers.
+
+The declarative data access features with Marten (`[Aggregate]`, `[ReadAggregate]`, `[Entity]` or `[Document]`) can utilize
+Marten batch querying for better efficiency when a handler or HTTP endpoint uses more than one declaration for data loading.
+
+Better control over how [Wolverine generates code with respect to IoC container usage](/guide/codegen.html#wolverine-code-generation-and-ioc).
+
+`IServiceContainer` moved to the `JasperFx` namespace.
+
+By and large, we've *tried* to replace any API nomenclature using "master" with "main."
+
+## Key Changes in 4.0
+
+* Wolverine dropped all support for .NET 6/7
+* The previous dependencies on Oakton, JasperFx.Core, and JasperFx.CodeGeneration were all combined into a single [JasperFx](https://github.com/jasperfx/jasperfx) library. There are shims for any method with "Oakton" in its name, but these are marked as `[Obsolete]`. You can pretty well do a find and replace for "Oakton" to "JasperFx". If your Oakton command classes live in a different project than the runnable application, add this to that project's `Properties/AssemblyInfo.cs` file:
+  ```cs
+  using JasperFx;
+
+  [assembly: JasperFxAssembly]
+  ```
+  This attribute replaces the older Oakton assembly attribute:
+  ```cs
+  using Oakton;
+
+  [assembly: OaktonCommandAssembly]
+  ```
+* Internally, the full "Critter Stack" is trying to use `Uri` values to identify databases when targeting multiple databases in either a modular monolith approach or with multi-tenancy
+* Many of the internal dependencies like Marten or AWS SQS SDK Nugets were updated
+* The signature of the Kafka `IKafkaEnvelopeMapper` changed somewhat to be more efficient in message serialization
+* Wolverine now supports [multi-tenancy through separate databases for EF Core](/guide/durability/efcore/multi-tenancy)
+* The Open Telemetry span names for executing a message are now the [Wolverine message type name](/guide/messages.html#message-type-name-or-alias)
+
 ## Key Changes in 3.0
 
 The 3.0 release did not have any breaking changes to the public API, but does come with some significant internal
@@ -114,7 +162,7 @@ var builder = WebApplication.CreateBuilder(args);
 // will assert this is missing on startup:(
 builder.Services.AddWolverineHttp();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Program.cs#L30-L41' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_adding_http_services' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Program.cs#L35-L46' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_adding_http_services' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Also for Wolverine.Http users, the `[Document]` attribute behavior in the Marten integration is now "required by default."
@@ -134,7 +182,7 @@ You can selectively override this behavior and tell Wolverine to publish the res
 by using the new 3.0 `[AlwaysPublishResponse]` attribute like this:
 
 <!-- snippet: sample_using_AlwaysPublishResponse -->
-<a id='snippet-sample_using_alwayspublishresponse'></a>
+<a id='snippet-sample_using_AlwaysPublishResponse'></a>
 ```cs
 public class CreateItemCommandHandler
 {
@@ -155,5 +203,5 @@ public class CreateItemCommandHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/Bugs/Bug_305_invoke_async_with_return_not_publishing_with_tuple_return_value.cs#L65-L86' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_alwayspublishresponse' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/Bugs/Bug_305_invoke_async_with_return_not_publishing_with_tuple_return_value.cs#L65-L86' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_AlwaysPublishResponse' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->

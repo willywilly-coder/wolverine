@@ -1,3 +1,4 @@
+using JasperFx;
 using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
 using JasperFx.Core.Reflection;
@@ -104,4 +105,6 @@ public class LightweightSagaPersistenceFrameProvider : IPersistenceFrameProvider
     {
         throw new NotSupportedException();
     }
+
+    public Frame[] DetermineFrameToNullOutMaybeSoftDeleted(Variable entity) => [];
 }

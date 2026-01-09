@@ -1,7 +1,9 @@
+using JasperFx;
 using JasperFx.Core.Reflection;
 using Npgsql;
 using Shouldly;
 using Weasel.Postgresql;
+using Wolverine.Persistence.Durability;
 using Wolverine.RDBMS;
 using Wolverine.Transports;
 
@@ -22,11 +24,24 @@ public class basic_bootstrapping_and_database_configuration : MultiTenancyContex
     [Fact]
     public void should_have_the_specified_master_database_as_master()
     {
-        Stores.Main.Name.ShouldBe("Master");
+        Stores.Main.Name.ShouldBe(StorageConstants.Main);
         Stores.Main.As<IMessageDatabase>().SchemaName.ShouldBe("control");
 
         new NpgsqlConnectionStringBuilder(Stores.Main.As<IMessageDatabase>().DataSource.CreateConnection().ConnectionString)
             .Database.ShouldBe("postgres");
+    }
+
+    [Fact]
+    public async Task store_roles()
+    {
+        Stores.Main.Role.ShouldBe(MessageStoreRole.Main);
+        foreach (var activeDatabase in Stores.ActiveDatabases())
+        {
+            if (activeDatabase != Stores.Main)
+            {
+                activeDatabase.Role.ShouldBe(MessageStoreRole.Tenant);
+            }
+        }
     }
 
     [Fact]
@@ -61,7 +76,7 @@ public class basic_bootstrapping_and_database_configuration : MultiTenancyContex
     [Fact]
     public async Task tenant_databases_do_not_have_node_and_assignment_tables()
     {
-        foreach (var database in Stores.ActiveDatabases().OfType<IMessageDatabase>().Where(x => x.Name != "Master"))
+        foreach (var database in Stores.ActiveDatabases().OfType<IMessageDatabase>().Where(x => x.Name != "Main"))
         {
             await using var conn = (NpgsqlConnection)await database.DataSource.OpenConnectionAsync();
 
@@ -101,11 +116,11 @@ public class basic_bootstrapping_and_database_configuration : MultiTenancyContex
     [Fact]
     public void only_the_master_database_is_the_master()
     {
-        foreach (var database in Stores.ActiveDatabases().OfType<IMessageDatabase>().Where(x => x.Name != "Master"))
+        foreach (var database in Stores.ActiveDatabases().OfType<IMessageDatabase>().Where(x => x.Name != StorageConstants.Main))
         {
-            database.IsMain.ShouldBeFalse();
+            database.Role.ShouldBe(MessageStoreRole.Tenant);
         }
 
-        Stores.Main.As<IMessageDatabase>().IsMain.ShouldBeTrue();
+        Stores.Main.As<IMessageDatabase>().Role.ShouldBe(MessageStoreRole.Main);
     }
 }

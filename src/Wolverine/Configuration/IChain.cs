@@ -1,13 +1,33 @@
 using System.Reflection;
+using JasperFx;
 using JasperFx.CodeGeneration;
 using JasperFx.CodeGeneration.Frames;
 using JasperFx.CodeGeneration.Model;
 using JasperFx.Core.Reflection;
 using Wolverine.Attributes;
 using Wolverine.Logging;
+using Wolverine.Persistence;
 using Wolverine.Runtime;
 
 namespace Wolverine.Configuration;
+
+internal static class ChainExtensions
+{
+    public static bool MatchesScope(this IChain chain, MethodInfo method)
+    {
+        if (chain == null) return true;
+
+        if (method.TryGetAttribute<ScopedMiddlewareAttribute>(out var att))
+        {
+            if (att.Scoping == MiddlewareScoping.Anywhere) return true;
+
+            return att.Scoping == chain.Scoping;
+        }
+
+        // All good if no attribute
+        return true;
+    }
+}
 
 #region sample_IChain
 
@@ -17,6 +37,12 @@ namespace Wolverine.Configuration;
 /// </summary>
 public interface IChain
 {
+    MiddlewareScoping Scoping { get; }
+    
+    void ApplyParameterMatching(MethodCall call);
+    
+    IdempotencyStyle Idempotency { get; set; }
+
     /// <summary>
     ///     Frames that would be initially placed in front of
     ///     the primary action(s)
@@ -131,6 +157,14 @@ public interface IChain
     /// </summary>
     /// <param name="variable"></param>
     Frame[] AddStopConditionIfNull(Variable variable);
+
+    /// <summary>
+    /// Used by code generation to add a middleware Frame that aborts the processing if the variable is null
+    /// </summary>
+    /// <param name="variable"></param>
+    Frame[] AddStopConditionIfNull(Variable data, Variable? identity, IDataRequirement requirement);
+
+    bool TryInferMessageIdentity(out PropertyInfo? property);
 }
 
 #endregion

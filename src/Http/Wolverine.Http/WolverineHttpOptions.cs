@@ -11,6 +11,7 @@ using Wolverine.Http.Policies;
 using Wolverine.Http.Resources;
 using Wolverine.Http.Runtime;
 using Wolverine.Http.Runtime.MultiTenancy;
+using Wolverine.Http.Validation.Internals;
 using Wolverine.Middleware;
 
 namespace Wolverine.Http;
@@ -84,6 +85,41 @@ public interface ITenantDetectionPolicies
     void DefaultIs(string defaultTenantId);
 }
 
+public enum RouteWarmup
+{
+    /// <summary>
+    /// Let Wolverine "warm up" the route on its first usage. This is the default.
+    /// </summary>
+    Lazy,
+    
+    /// <summary>
+    /// If there is a chance of near simultaneous requests on application startup, use
+    /// this option to eagerly warm up all routes as part of application startup. This
+    /// slows down the "cold start", but eliminates possible concurrency issues on startup
+    /// </summary>
+    Eager
+}
+
+public enum ServiceProviderSource
+{
+    /// <summary>
+    /// The default Wolverine behavior that uses an isolated and scoped IServiceProvider
+    /// within the generated code whenever it is necessary to use service location
+    /// </summary>
+    IsolatedAndScoped,
+    
+    /// <summary>
+    /// Utilize the IServiceProvider scoped to HttpContext.RequestServices when it is necessary to
+    /// use service location within HTTP endpoints. Use this option to shared scoped services with
+    /// AspNetCore middleware.
+    ///
+    /// Use with caution, as this can make your system harder to reason about -- even though this kind of
+    /// state smuggling through scoped IoC containers between middleware and controllers is unfortunately
+    /// common within AspNetCore
+    /// </summary>
+    FromHttpContextRequestServices
+}
+
 public class WolverineHttpOptions
 {
     public WolverineHttpOptions()
@@ -91,8 +127,26 @@ public class WolverineHttpOptions
         Policies.Add(new HttpAwarePolicy());
         Policies.Add(new RequestIdPolicy());
         Policies.Add(new RequiredEntityPolicy());
+        Policies.Add(new HttpChainResponseCacheHeaderPolicy());
 
         Policies.Add(TenantIdDetection);
+    }
+
+    /// <summary>
+    /// Use to control how Wolverine.HTTP resolves the scoped IServiceProvider during
+    /// HTTP requests. The default is to use an isolated IServiceProvider within the Wolverine execution, but
+    /// you can opt to instead use HttpContext.RequestServices to share scope with AspNetCore middleware and
+    /// who knows what else
+    /// </summary>
+    public ServiceProviderSource ServiceProviderSource { get; set; } = ServiceProviderSource.IsolatedAndScoped;
+    
+    /// <summary>
+    ///     Apply DataAnnotations Validation middleware to all Wolverine HTTP endpoints
+    /// </summary>
+    /// <param name="httpOptions"></param>
+    public void UseDataAnnotationsValidationProblemDetailMiddleware()
+    {
+        AddPolicy<HttpChainDataAnnotationsValidationPolicy>();
     }
     
     public async ValueTask<string?> TryDetectTenantId(HttpContext httpContext)
@@ -115,6 +169,12 @@ public class WolverineHttpOptions
             .FirstOrDefault(tenantId => tenantId.IsNotEmpty());
     }
 
+    /// <summary>
+    /// Potentially control how the Wolverine HTTP routes are "warmed up" at runtime
+    /// to alleviate concurrent access problems
+    /// </summary>
+    public RouteWarmup WarmUpRoutes { get; set; } = RouteWarmup.Lazy;
+
     internal TenantIdDetection TenantIdDetection { get; } = new();
 
     internal Lazy<JsonSerializerOptions> JsonSerializerOptions { get; set; } = new(() => new JsonSerializerOptions());
@@ -133,6 +193,18 @@ public class WolverineHttpOptions
     /// Configure built in tenant id detection strategies
     /// </summary>
     public ITenantDetectionPolicies TenantId => TenantIdDetection;
+    
+    /// <summary>
+    /// Tell Wolverine that services of type T should always be sourced from the HttpContext.RequestServices.
+    /// This enables your system to use shared services with AspNetCore middleware while still allowing Wolverine
+    /// to generate inlined constructor invocation code otherwise
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    public void SourceServiceFromHttpContext<T>()
+    {
+        var source = new RequestServicesVariableSource(typeof(T));
+        Endpoints!.Rules.Sources.Add(source);
+    }
 
     /// <summary>
     /// Opt into using Newtonsoft.Json for all JSON serialization in the Wolverine
