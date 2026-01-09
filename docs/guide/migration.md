@@ -23,6 +23,10 @@ Marten batch querying for better efficiency when a handler or HTTP endpoint uses
 
 Better control over how [Wolverine generates code with respect to IoC container usage](/guide/codegen.html#wolverine-code-generation-and-ioc).
 
+`IServiceContainer` moved to the `JasperFx` namespace.
+
+By and large, we've *tried* to replace any API nomenclature using "master" with "main."
+
 ## Key Changes in 4.0
 
 * Wolverine dropped all support for .NET 6/7
@@ -178,7 +182,7 @@ You can selectively override this behavior and tell Wolverine to publish the res
 by using the new 3.0 `[AlwaysPublishResponse]` attribute like this:
 
 <!-- snippet: sample_using_AlwaysPublishResponse -->
-<a id='snippet-sample_using_alwayspublishresponse'></a>
+<a id='snippet-sample_using_AlwaysPublishResponse'></a>
 ```cs
 public class CreateItemCommandHandler
 {
@@ -199,5 +203,5 @@ public class CreateItemCommandHandler
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/Bugs/Bug_305_invoke_async_with_return_not_publishing_with_tuple_return_value.cs#L65-L86' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_alwayspublishresponse' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Persistence/MartenTests/Bugs/Bug_305_invoke_async_with_return_not_publishing_with_tuple_return_value.cs#L65-L86' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_AlwaysPublishResponse' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->

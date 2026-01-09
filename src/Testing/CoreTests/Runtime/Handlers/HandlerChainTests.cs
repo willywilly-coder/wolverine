@@ -1,6 +1,7 @@
 ﻿using JasperFx;
 using Microsoft.Extensions.Logging;
 using Wolverine.ComplianceTests.Compliance;
+using Wolverine.Persistence;
 using Wolverine.Runtime;
 using Wolverine.Runtime.Handlers;
 using Xunit;
@@ -14,7 +15,14 @@ public class HandlerChainTests
     public void the_default_log_level_is_information()
     {
         var chain = HandlerChain.For<Target>(x => x.Go(null), null);
-        chain.ExecutionLogLevel.ShouldBe(LogLevel.Information);
+        chain.SuccessLogLevel.ShouldBe(LogLevel.Information);
+    }
+
+    [Fact]
+    public void default_idempotency_is_none()
+    {
+        var chain = HandlerChain.For<Target>(x => x.Go(null), null);
+        chain.Idempotency.ShouldBe(IdempotencyStyle.None);
     }
 
     [Fact]

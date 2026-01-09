@@ -47,6 +47,7 @@ public partial class WolverineRuntime
             // Has to be done before initializing the storage
             Handlers.AddMessageHandler(typeof(IAgentCommand), new AgentCommandHandler(this));
             
+            
             if (Options.Durability.DurabilityAgentEnabled)
             {
                 foreach (var store in await _stores.Value.FindAllAsync())
@@ -175,7 +176,13 @@ public partial class WolverineRuntime
             return;
         }
 
-        _agentCancellation.Cancel();
+        if (DynamicCodeBuilder.WithinCodegenCommand)
+        {
+            // Don't do anything here
+            return;
+        }
+
+        await _agentCancellation.CancelAsync();
 
         _hasStopped = true;
 
@@ -210,6 +217,11 @@ public partial class WolverineRuntime
             await teardownAgentsAsync();
             
             await _endpoints.DrainAsync();
+
+            if (_accumulator.IsValueCreated)
+            {
+                await _accumulator.Value.DrainAsync();
+            }
         }
 
         DurabilitySettings.Cancel();
@@ -235,6 +247,12 @@ public partial class WolverineRuntime
 
     private async Task startMessagingTransportsAsync()
     {
+        // Start up metrics collection
+        if (Options.Metrics.Mode != WolverineMetricsMode.SystemDiagnosticsMeter)
+        {
+            _accumulator.Value.Start();
+        }
+        
         discoverListenersFromConventions();
 
         // No local queues if running in Serverless

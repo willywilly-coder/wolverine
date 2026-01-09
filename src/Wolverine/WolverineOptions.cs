@@ -7,14 +7,18 @@ using JasperFx.Core;
 using JasperFx.Core.Reflection;
 using JasperFx.Descriptors;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Wolverine.Configuration;
+using Wolverine.ErrorHandling;
 using Wolverine.Persistence;
+using Wolverine.Persistence.Durability;
 using Wolverine.Persistence.MultiTenancy;
 using Wolverine.Runtime.Handlers;
 using Wolverine.Runtime.Partitioning;
 using Wolverine.Runtime.Scheduled;
 using Wolverine.Runtime.Serialization;
 using Wolverine.Transports.Local;
+using Wolverine.Transports.Stub;
 
 [assembly: InternalsVisibleTo("Wolverine.Testing")]
 
@@ -36,6 +40,57 @@ public enum MultipleHandlerBehavior
     Separated
 }
 
+public enum WolverineMetricsMode
+{
+    /// <summary>
+    /// Wolverine will publish performance metrics via System.Diagnostics.Meter
+    /// where any Otel tooling can be configured to scrape metrics
+    /// </summary>
+    SystemDiagnosticsMeter,
+    
+    /// <summary>
+    /// Wolverine will accumulate and occasionally publish performance metrics
+    /// via messaging to subscribers configured to listen for Wolverine performance
+    /// data
+    /// </summary>
+    CritterWatch,
+    
+    /// <summary>
+    /// Wolverine will both accumulate and publish metrics information to CritterWatch
+    /// *and* publish metrics via System.Diagnostics.Meter
+    /// </summary>
+    Hybrid
+}
+
+public enum UnknownMessageBehavior
+{
+    /// <summary>
+    /// Default behavior. Wolverine will log a message that there was no known handler
+    /// for the incoming message, but otherwise discard it
+    /// </summary>
+    LogOnly,
+    
+    /// <summary>
+    /// Wolverine will log a message that there was no known handler for the incoming message,
+    /// then move it to the appropriate dead letter queue for the receiving endpoint
+    /// </summary>
+    DeadLetterQueue
+}
+
+public class MetricsOptions
+{
+    /// <summary>
+    /// How should Wolverine collect and publish metrics about message handling and publications?
+    /// </summary>
+    public WolverineMetricsMode Mode { get; set; } = WolverineMetricsMode.SystemDiagnosticsMeter;
+    
+    /// <summary>
+    /// If using either CritterWatch or Hybrid metrics publishing, this is the period in which
+    /// Wolverine will sample and publish metric data collection. Default is 5 seconds
+    /// </summary>
+    public TimeSpan SamplingPeriod { get; set; } = 5.Seconds();
+}
+
 /// <summary>
 ///     Completely defines and configures a Wolverine application
 /// </summary>
@@ -43,9 +98,11 @@ public sealed partial class WolverineOptions
 {
     private readonly List<Action<WolverineOptions>> _lazyActions = [];
     private AutoCreate? _autoBuildMessageStorageOnStartup;
+    private UnknownMessageBehavior _unknownMessageBehavior = UnknownMessageBehavior.LogOnly;
 
     public WolverineOptions() : this(null)
     {
+        
     }
 
     public WolverineOptions(string? assemblyName)
@@ -79,8 +136,14 @@ public sealed partial class WolverineOptions
         Policies.Add<ResponsePolicy>();
         Policies.Add<OutgoingMessagesPolicy>();
 
+        this.OnException<DuplicateIncomingEnvelopeException>().Discard();
+
         MessagePartitioning = new MessagePartitioningRules(this);
+        
+        InternalRouteSources.Insert(0, Transports.GetOrCreate<StubTransport>());
     }
+
+    public MetricsOptions Metrics { get; } = new();
 
     /// <summary>
     /// What is the policy within this application for whether or not it is valid to allow Service Location within
@@ -319,6 +382,25 @@ public sealed partial class WolverineOptions
     
     // This helps govern some command line work
     internal bool LightweightMode { get; set; }
+
+    public UnknownMessageBehavior UnknownMessageBehavior
+    {
+        get => _unknownMessageBehavior;
+        set
+        {
+            _unknownMessageBehavior = value;
+            if (value == UnknownMessageBehavior.DeadLetterQueue)
+            {
+                Services.TryAddSingleton<IMissingHandler, MoveUnknownMessageToDeadLetterQueue>();
+            }
+            else
+            {
+                Services.RemoveAll(x =>
+                    !x.IsKeyedService && x.ServiceType == typeof(IMissingHandler) && x.ImplementationType ==
+                        typeof(MoveUnknownMessageToDeadLetterQueue));
+            }
+        }
+    }
 
     internal void ReadJasperFxOptions(JasperFxOptions jasperfx)
     {

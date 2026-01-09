@@ -79,6 +79,13 @@ public partial class RabbitMqTransport : BrokerTransport<RabbitMqEndpoint>, IAsy
     internal ConnectionMonitor ListeningConnection => _listenerConnection ?? throw new InvalidOperationException("The listening connection has not been created yet or is disabled!");
     internal ConnectionMonitor SendingConnection => _sendingConnection ?? throw new InvalidOperationException("The sending connection has not been created yet or is disabled!");
 
+    /// <summary>
+    /// Specifies a customizable action for configuring channel creation options in RabbitMQ.
+    /// Allows users to modify properties and behaviors of channels used in RabbitMQ communication
+    /// by providing a delegate to apply specific settings.
+    /// </summary>
+    public Action<WolverineRabbitMqChannelOptions>? ChannelCreationOptions { get; set; }
+
     public ConnectionFactory? ConnectionFactory { get; private set; }
 
     internal void ConfigureFactory(Action<ConnectionFactory> configure)
@@ -247,13 +254,15 @@ public partial class RabbitMqTransport : BrokerTransport<RabbitMqEndpoint>, IAsy
             var queue = new RabbitMqQueue(queueName, this, EndpointRole.System)
             {
                 AutoDelete = true,
-                IsDurable = false,
+                IsDurable = true, // This was changed for https://github.com/JasperFx/wolverine/issues/1871
                 IsListener = true,
                 IsUsedForReplies = true,
                 ListenerCount = 1,
                 EndpointName = ResponseEndpointName,
                 QueueType = QueueType.classic // This is important, quorum queues cannot be auto-delete
             };
+
+            queue.Arguments["x-expires"] = 1800000; // 30 minute expiry
 
             Queues[queueName] = queue;
         }

@@ -352,7 +352,7 @@ public class EnvelopeTests
             ScheduleDelay = 1.Days()
         };
 
-        envelope.ScheduledTime.Value.Date.ShouldBe(DateTime.Today.AddDays(1));
+        envelope.ScheduledTime.Value.Date.ShouldBe(DateTime.UtcNow.AddDays(1).Date);
         envelope.ScheduleDelay.ShouldBe(1.Days());
     }
 
@@ -364,7 +364,7 @@ public class EnvelopeTests
             DeliverWithin = 1.Days()
         };
 
-        envelope.DeliverBy.Value.Date.ShouldBe(DateTime.Today.AddDays(1));
+        envelope.DeliverBy.Value.Date.ShouldBe(DateTime.UtcNow.AddDays(1).Date);
         envelope.DeliverWithin.ShouldBe(1.Days());
     }
 
@@ -432,20 +432,6 @@ public class EnvelopeTests
 
         var dict = new Dictionary<string, object>(envelope.ToMetricsHeaders());
         dict["org.unit"].ShouldBe("foo");
-    }
-
-    [Fact]
-    public void propagate_tenant_id_in_ForSend()
-    {
-        var envelope = new Envelope
-        {
-            Destination = new Uri("local://one"),
-            Message = new Message1(),
-            TenantId = "tenant1"
-        };
-
-        var send = envelope.ForSend(new Message2());
-        send.TenantId.ShouldBe(envelope.TenantId);
     }
 
     public class when_building_delivery_options_to_mimic_an_envelope
@@ -581,6 +567,74 @@ public class EnvelopeTests
         public void the_content_type_should_be_binary_envelope()
         {
             theScheduledEnvelope.ContentType.ShouldBe(TransportConstants.SerializedEnvelope);
+        }
+    }
+
+    public class when_building_an_envelope_for_persisted_handled
+    {
+        private readonly Envelope theOriginal;
+        private readonly DateTimeOffset now;
+        private readonly DurabilitySettings theSettings;
+        private readonly Envelope theHandledEnvelope;
+
+        public when_building_an_envelope_for_persisted_handled()
+        {
+            theOriginal = ObjectMother.Envelope();
+            theOriginal.Status = EnvelopeStatus.Incoming;
+            
+            now = DateTime.Today.ToUniversalTime();
+            theSettings = new DurabilitySettings
+            {
+                KeepAfterMessageHandling = 5.Minutes()
+            };
+
+            theHandledEnvelope = Envelope.ForPersistedHandled(theOriginal, now, theSettings);
+        }
+
+        [Fact]
+        public void status_should_be_handled()
+        {
+            theHandledEnvelope.Status.ShouldBe(EnvelopeStatus.Handled);
+        }
+
+        [Fact]
+        public void keep_until_should_be_set()
+        {
+            theHandledEnvelope.KeepUntil.Value.ShouldBe(now.AddMinutes(5));
+        }
+
+        [Fact]
+        public void owner_is_any_node()
+        {
+            theHandledEnvelope.OwnerId.ShouldBe(0);
+        }
+
+        [Fact]
+        public void destination()
+        {
+            theHandledEnvelope.Destination.ShouldBe(theOriginal.Destination);
+        }
+
+        [Fact]
+        public void message_type()
+        {
+            theHandledEnvelope.MessageType.ShouldBe(theOriginal.MessageType);
+        }
+
+        [Fact]
+        public void set_the_message_type_1()
+        {
+            var envelope = new Envelope();
+            envelope.SetMessageType(typeof(Message1));
+            envelope.MessageType.ShouldBe(typeof(Message1).ToMessageTypeName());
+        }
+        
+        [Fact]
+        public void set_the_message_type_2()
+        {
+            var envelope = new Envelope();
+            envelope.SetMessageType<Message1>();
+            envelope.MessageType.ShouldBe(typeof(Message1).ToMessageTypeName());
         }
     }
 }

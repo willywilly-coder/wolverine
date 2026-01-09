@@ -101,7 +101,7 @@ public partial class Envelope : IHasTenantId
                 throw new ArgumentNullException(nameof(value));
             }
 
-            DeliverBy = DateTimeOffset.Now.Add(value.Value);
+            DeliverBy = DateTimeOffset.UtcNow.Add(value.Value);
             _deliverWithin = value;
         }
         get => _deliverWithin;
@@ -118,7 +118,7 @@ public partial class Envelope : IHasTenantId
             _scheduleDelay = value;
             if (value != null)
             {
-                ScheduledTime = DateTimeOffset.Now.Add(value.Value);
+                ScheduledTime = DateTimeOffset.UtcNow.Add(value.Value);
             }
         }
         get => _scheduleDelay;
@@ -228,6 +228,26 @@ public partial class Envelope : IHasTenantId
     ///     Message type alias for the contents of this Envelope
     /// </summary>
     public string? MessageType { get; set; }
+
+    /// <summary>
+    /// Set the MessageType to Wolverine's message type name for
+    /// T
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    public void SetMessageType<T>()
+    {
+        SetMessageType(typeof(T));
+    }
+
+    /// <summary>
+    /// Set the MessageType to Wolverine's message type name for
+    /// this message type
+    /// </summary>
+    /// <param name="messageType"></param>
+    public void SetMessageType(Type messageType)
+    {
+        MessageType = messageType.ToMessageTypeName();
+    }
 
     /// <summary>
     ///     Location where any replies should be sent
@@ -425,6 +445,10 @@ public partial class Envelope : IHasTenantId
     /// <returns></returns>
     public bool IsScheduledForLater(DateTimeOffset utcNow)
     {
+        // Doesn't matter, if it's been scheduled and persisted, it has 
+        // to be scheduled
+        if (Status == EnvelopeStatus.Scheduled) return true;
+        
         return ScheduledTime.HasValue && ScheduledTime.Value > utcNow;
     }
 
@@ -453,4 +477,24 @@ public partial class Envelope : IHasTenantId
     /// persisted this envelope for later tracking
     /// </summary>
     internal IMessageStore? Store { get; set; }
+
+    public static Envelope ForPersistedHandled(Envelope original, DateTimeOffset now, DurabilitySettings settings)
+    {
+        return new Envelope
+        {
+            Id = original.Id,
+            Data = [],
+            OwnerId = 0,
+            Status = EnvelopeStatus.Handled,
+            Destination = original.Destination,
+            MessageType = original.MessageType,
+            KeepUntil = now.Add(settings.KeepAfterMessageHandling)
+        };
+    }
+    
+    /// <summary>
+    /// Marks the time stamp for how long this envelope should be retained as
+    /// "Handled" in the inbox for idempotency protections
+    /// </summary>
+    public DateTimeOffset? KeepUntil { get; set; }
 }

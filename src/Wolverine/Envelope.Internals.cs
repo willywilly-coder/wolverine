@@ -45,6 +45,12 @@ public partial class Envelope
         Serializer = writer ?? throw new ArgumentNullException(nameof(writer));
         ContentType = writer.ContentType;
     }
+    
+    /// <summary>
+    /// Helps denote to the transactional middleware that this envelope was
+    /// persisted or not to aid in the "Handled" behavior
+    /// </summary>
+    public bool WasPersistedInInbox { get; set; }
 
     public IMessageSerializer? Serializer { get; set; }
 
@@ -84,6 +90,8 @@ public partial class Envelope
     public bool IsResponse { get; set; }
     public Exception? Failure { get; set; }
     internal Envelope[]? Batch { get; set; }
+    
+    internal bool HasBeenAcked { get; set; }
 
     internal void StartTiming()
     {
@@ -101,6 +109,11 @@ public partial class Envelope
         _timer.Stop();
         return _timer.ElapsedMilliseconds;
     }
+
+    /// <summary>
+    /// How long did the current execution take?
+    /// </summary>
+    internal long ExecutionTime => _timer.ElapsedMilliseconds;
 
     /// <summary>
     /// </summary>
@@ -167,7 +180,14 @@ public partial class Envelope
     /// <returns></returns>
     internal Envelope CreateForResponse(object message)
     {
-        var child = ForSend(message);
+        var child = new Envelope
+        {
+            Message = message,
+            CorrelationId = Id.ToString(),
+            ConversationId = Id,
+            SagaId = SagaId,
+            TenantId = TenantId
+        };
         child.CorrelationId = CorrelationId;
         child.ConversationId = Id;
 
@@ -184,19 +204,6 @@ public partial class Envelope
         }
 
         return child;
-    }
-
-    [Obsolete("not really used")]
-    internal Envelope ForSend(object message)
-    {
-        return new Envelope
-        {
-            Message = message,
-            CorrelationId = Id.ToString(),
-            ConversationId = Id,
-            SagaId = SagaId,
-            TenantId = TenantId
-        };
     }
 
     internal ValueTask StoreAndForwardAsync()

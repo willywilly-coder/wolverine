@@ -71,6 +71,7 @@ public static class WolverineOptionsMartenExtensions
 
             configure?.Invoke(integration);
 
+            expression.Services.AddSingleton(integration);
             expression.Services.AddSingleton<IWolverineExtension>(integration);
         }
         else
@@ -109,7 +110,7 @@ public static class WolverineOptionsMartenExtensions
                 return BuildSinglePostgresqlMessageStore(schemaName, integration.AutoCreate, store, runtime, logger);
             }
 
-            var masterDatabaseConnectionString = integration.MasterDatabaseConnectionString;
+            var masterDatabaseConnectionString = integration.MainDatabaseConnectionString;
             var masterDataSource = integration.MasterDataSource;
 
             if (store.Tenancy is MasterTableTenancy masterTableTenancy)

@@ -1,5 +1,15 @@
 # HTTP Endpoints
 
+::: warning
+While Wolverine.HTTP has a relaxed view of naming conventions since it depends on the routing attributes for discovery. It
+is very possible to utilize the same method as both an HTTP endpoint and Wolverine message handler if the method both
+follows the correct naming conventions for message handler discovery and is decorated with one of the `[WolverineVerb]` attributes.
+
+This can lead to unexpected code generation errors on the message handler side if the method refers to HTTP route arguments,
+query string values, or other AspNetCore services. Our strong advice is to use the `Endpoint` class name nomenclature for HTTP
+endpoints unless you are explicitly meaning for a method to be both an HTTP endpoint and message handler. 
+:::
+
 First, a little terminology about Wolverine HTTP endpoints. Consider the following endpoint method:
 
 <!-- snippet: sample_simple_wolverine_http_endpoint -->
@@ -161,7 +171,7 @@ to use any return values as a the endpoint response and to return an empty respo
 code. Here's an example from the tests:
 
 <!-- snippet: sample_using_EmptyResponse -->
-<a id='snippet-sample_using_emptyresponse'></a>
+<a id='snippet-sample_using_EmptyResponse'></a>
 ```cs
 [AggregateHandler]
 [WolverinePost("/orders/ship"), EmptyResponse]
@@ -174,12 +184,12 @@ public static OrderShipped Ship(ShipOrder command, Order order)
     return new OrderShipped();
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Marten/Orders.cs#L122-L135' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_emptyresponse' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Marten/Orders.cs#L122-L135' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_using_EmptyResponse' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 ## JSON Handling
 
-See [JSON serialization for more information](/json)
+See [JSON serialization for more information](/guide/http/json)
 
 ## Returning Strings
 
@@ -207,7 +217,7 @@ The `IResult` mechanics are applied to the return value of any type that can be 
 Wolverine will execute an ASP.Net Core `IResult` object returned from an HTTP endpoint method. 
 
 <!-- snippet: sample_conditional_IResult_return -->
-<a id='snippet-sample_conditional_iresult_return'></a>
+<a id='snippet-sample_conditional_IResult_return'></a>
 ```cs
 [WolverinePost("/choose/color")]
 public IResult Redirect(GoToColor request)
@@ -225,7 +235,7 @@ public IResult Redirect(GoToColor request)
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http.Tests/DocumentationSamples.cs#L31-L49' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_conditional_iresult_return' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http.Tests/DocumentationSamples.cs#L31-L49' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_conditional_IResult_return' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -270,7 +280,7 @@ There's actually a way to customize how Wolverine handles parameters in HTTP end
 To do so, you'd need to write an implementation of the `IParameterStrategy` interface from Wolverine.Http:
 
 <!-- snippet: sample_IParameterStrategy -->
-<a id='snippet-sample_iparameterstrategy'></a>
+<a id='snippet-sample_IParameterStrategy'></a>
 ```cs
 /// <summary>
 /// Apply custom handling to a Wolverine.Http endpoint/chain based on a parameter within the
@@ -282,14 +292,14 @@ public interface IParameterStrategy
     bool TryMatch(HttpChain chain, IServiceContainer container, ParameterInfo parameter, out Variable? variable);
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http/CodeGen/IParameterStrategy.cs#L8-L20' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_iparameterstrategy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/Wolverine.Http/CodeGen/IParameterStrategy.cs#L8-L20' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_IParameterStrategy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 As an example, let's say that you want any parameter of type `DateTimeOffset` that's named "now" to receive the current
 system time. To do that, we can write this class:
 
 <!-- snippet: sample_NowParameterStrategy -->
-<a id='snippet-sample_nowparameterstrategy'></a>
+<a id='snippet-sample_NowParameterStrategy'></a>
 ```cs
 public class NowParameterStrategy : IParameterStrategy
 {
@@ -308,7 +318,7 @@ public class NowParameterStrategy : IParameterStrategy
     }
 }
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Samples/CustomParameter.cs#L11-L30' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_nowparameterstrategy' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Samples/CustomParameter.cs#L11-L30' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_NowParameterStrategy' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 and register that strategy within our `MapWolverineEndpoints()` set up like so:
@@ -319,7 +329,7 @@ and register that strategy within our `MapWolverineEndpoints()` set up like so:
 // Customizing parameter handling
 opts.AddParameterHandlingStrategy<NowParameterStrategy>();
 ```
-<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Program.cs#L270-L275' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_adding_custom_parameter_handling' title='Start of snippet'>anchor</a></sup>
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/Program.cs#L272-L277' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_adding_custom_parameter_handling' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 And lastly, here's the application within an HTTP endpoint for extra context:
@@ -417,5 +427,33 @@ limit the applicability of individual middleware methods.
 There is no runtime filtering here because the `MiddlewareScoping` impacts the generated code around your hybrid message handler / 
 HTTP endpoint method, and Wolverine already generates code separately for the two use cases. 
 :::
+
+As of Wolverine 5.7, you can also technically use `HttpContext` arguments in the message handler usage *if*
+you are carefully accounting for that being null as shown in this sample:
+
+<!-- snippet: sample_HybridHandler_with_null_HttpContext -->
+<a id='snippet-sample_HybridHandler_with_null_HttpContext'></a>
+```cs
+public record DoHybrid(string Message);
+
+public static class HybridHandler
+{
+    [WolverinePost("/hybrid")]
+    public static async Task HandleAsync(DoHybrid command, HttpContext? context)
+    {
+        // What this, because it will be null if this is used within 
+        // a message handler!
+        if (context != null)
+        {
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync(command.Message);
+        }
+    }
+}
+```
+<sup><a href='https://github.com/JasperFx/wolverine/blob/main/src/Http/WolverineWebApi/HybridHandler.cs#L5-L24' title='Snippet source file'>snippet source</a> | <a href='#snippet-sample_HybridHandler_with_null_HttpContext' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+
 
 
