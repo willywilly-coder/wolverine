@@ -2,8 +2,6 @@ using JasperFx;
 using JasperFx.CodeGeneration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Module1;
-using Wolverine.Tracking;
 using Xunit;
 
 namespace CoreTests;

@@ -52,7 +52,7 @@ internal class MartenMessageDatabaseSource : ITenantedMessageSource
         _runtime = runtime;
     }
 
-    public DatabaseCardinality Cardinality => _store.Options.Tenancy.Cardinality;
+    public DatabaseCardinality Cardinality => _store.Options.Tenancy.As<IDatabaseUser>().Cardinality;
 
     public async ValueTask<IMessageStore> FindAsync(string tenantId)
     {

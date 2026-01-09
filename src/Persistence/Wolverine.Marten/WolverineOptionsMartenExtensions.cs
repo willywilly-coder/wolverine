@@ -105,7 +105,7 @@ public static class WolverineOptionsMartenExtensions
                              store.Options.DatabaseSchemaName ?? "public";
 
 
-            if (store.Tenancy.Cardinality == DatabaseCardinality.Single)
+            if (store.Tenancy.As<IDatabaseUser>().Cardinality == DatabaseCardinality.Single)
             {
                 return BuildSinglePostgresqlMessageStore(schemaName, integration.AutoCreate, store, runtime, logger);
             }

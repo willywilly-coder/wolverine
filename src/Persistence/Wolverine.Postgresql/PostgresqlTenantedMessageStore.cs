@@ -1,6 +1,4 @@
 using ImTools;
-using JasperFx;
-using JasperFx.Core;
 using JasperFx.Descriptors;
 using JasperFx.MultiTenancy;
 using Microsoft.Extensions.Logging;

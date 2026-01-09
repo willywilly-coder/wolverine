@@ -42,7 +42,10 @@ public partial class WolverineRuntime
             // Build up the message handlers
             Handlers.Compile(Options, _container);
 
-            await tryMigrateStorage();
+            if (Options.AutoBuildMessageStorageOnStartup != AutoCreate.None && Storage is not NullMessageStore)
+            {
+                await Storage.Admin.MigrateAsync();
+            }
 
             // Has to be done before initializing the storage
             Handlers.AddMessageHandler(typeof(IAgentCommand), new AgentCommandHandler(this));
