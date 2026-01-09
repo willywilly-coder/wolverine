@@ -75,6 +75,6 @@ was a combination web api framework and asynchronous message bus. What is now Wo
 thought was the positive aspects of fubu's programming model but do so with a
 much more efficient runtime. Wolverine was largely rebooted, revamped, and renamed in 2022 with the intention of being
 combined with [Marten](https://martendb.io) into the "critter stack" for highly productive
-and highly performant server side development in .NET.
+and highly performant server side development in .NET
 
 
